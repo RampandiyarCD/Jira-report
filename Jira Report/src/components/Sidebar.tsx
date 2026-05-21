@@ -1,0 +1,78 @@
+import {
+  ChevronLeft,
+  ChevronRight,
+  GitCompare,
+  Layers,
+  LayoutDashboard,
+  Map,
+  Zap,
+} from "lucide-react";
+import { useState } from "react";
+import { cn } from "../utils/utils";
+import { NavLink } from "react-router-dom";
+import { Button } from "./Button";
+
+const navItems = [
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
+  { to: "/board", label: "Board Overview", icon: Layers },
+  { to: "/sprints", label: "Sprint Analytics", icon: Zap },
+  { to: "/compare", label: "Sprint Compare", icon: GitCompare },
+  { to: "/epics", label: "Epic Intelligence", icon: Map },
+];
+
+export const Sidebar = () => {
+  const [collapsed, setCollapsed] = useState(false);
+
+  return (
+    <aside
+      className={cn(
+        "flex flex-col h-screen bg-slate-900 text-white transition-all duration-300 relative shrink-0",
+        collapsed ? "w-16" : "w-50",
+      )}
+    >
+      <div className="flex items-center gap-3 px-4 py-5 borfer-b border-slate-700">
+        <div className="shrink-0 w-8 h-8 rounded-lg bg-blue-500 flex items-center justify-center">
+          <LayoutDashboard size={16} className="text-white" />
+        </div>
+        {!collapsed && (
+          <div>
+            <p className="text-sm font-bold leading-tight">Jira Intelligence</p>
+          </div>
+        )}
+      </div>
+      <nav className="flex-1 py-4 overflow-y-auto">
+        <ul className="space-y-1 px-2">
+          {navItems.map(({ to, label, icon: Icons, exact }) => (
+            <li key={to}>
+              <NavLink
+                to={to}
+                end={exact}
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
+                    isActive
+                      ? "bg-blue-600 text-white"
+                      : "text-slate-300 hover:bg-slate-800 hover:text-white",
+                  )
+                }
+                title={collapsed ? label : undefined}
+              >
+                <Icons size={18} className="shrink-0" />
+                {!collapsed && <span className="truncate">{label}</span>}
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+      </nav>
+      <Button
+        name={
+          collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={12} />
+        }
+        className={cn(
+          "absolute -right-3 top-16 w-6 h-6 rounded-full bg-slate-700 border border-slate-600 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-600 transition-colors",
+        )}
+        onClick={() => setCollapsed(!collapsed)}
+      />
+    </aside>
+  );
+};
