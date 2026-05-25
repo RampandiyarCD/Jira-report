@@ -15,6 +15,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { Button } from "./Button";
 import { Label } from "./Label";
 import { logoutApi } from "../api/jira";
+import { useFilter } from "../context/FilterContext";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -30,10 +31,12 @@ const name = localStorage.getItem("user_name")
 export const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
+  const { clearFilters } = useFilter();
 
   const handleLogout = async () => {
     try {
       await logoutApi();
+      clearFilters();
       localStorage.clear()
       navigate("/");
     } catch (error) {

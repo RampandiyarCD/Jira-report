@@ -2,16 +2,12 @@ import { Select } from './Select'
 import { Label } from './Label'
 import { getBoards, getProjects } from '../api/jira'
 import { useEffect, useState } from 'react';
+import { useFilter } from '../context/FilterContext';
 
 export function GlobalFilters() {
   const [projects, setProjects] = useState<{ name: string; key: string }[]>([]);
   const [boards, setBoards] = useState<{ name: string; id: string; projectKey: string; type: string }[]>([]);
-  const [selectedProject, setSelectedProject] = useState<string>(() => {
-    return localStorage.getItem("selected_project_key") || "";
-  });
-  const [selectedBoard, setSelectedBoard] = useState<string>(() => {
-    return localStorage.getItem("selected_board_id") || "";
-  });
+  const { selectedProject, selectedBoard, setSelectedProject, setSelectedBoard } = useFilter();
 
   const projectLoader = async () => {
     try {
@@ -27,14 +23,6 @@ export function GlobalFilters() {
   useEffect(() => {
     projectLoader();
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem("selected_project_key", selectedProject);
-  }, [selectedProject]);
-
-  useEffect(() => {
-    localStorage.setItem("selected_board_id", selectedBoard);
-  }, [selectedBoard]);
 
   useEffect(() => {
     const boardLoader = async () => {
