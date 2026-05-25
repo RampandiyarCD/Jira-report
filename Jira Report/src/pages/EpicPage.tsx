@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "../components/Card";
 import { useEffect, useState } from "react";
-import { getEpics } from "../api/jira";
+import { getEpics, getEpicsAll } from "../api/jira";
 import toast from "react-hot-toast";
 
 interface Epic {
@@ -15,26 +15,34 @@ export function EpicsPage() {
   const [epics, setEpics] = useState<Epic[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const boardId = localStorage.getItem("selected_board_id");
+  const [boardId, setBoardId] = useState<string>(() => localStorage.getItem("selected_board_id") || "");
+  const [projectKey, setProjectKey] = useState<string>(() => localStorage.getItem("selected_project_key") || "");
 
-  
+  useEffect(() => {
+    const refreshFilters = () => {
+      setBoardId(localStorage.getItem("selected_board_id") || "");
+      setProjectKey(localStorage.getItem("selected_project_key") || "");
+    };
+    window.addEventListener("jira-filters-changed", refreshFilters);
+    return () => window.removeEventListener("jira-filters-changed", refreshFilters);
+  }, []);
 
   useEffect(() => {
     const fetchEpics = async () => {
-      if (!boardId) {
-        toast.error("Please select a board");
-        setEpics([]);
-        return;
-      }
       setLoading(true);
       try {
-        const result = await getEpics(Number(boardId));
-        if (result?.data?.epics) {
-          setEpics(result.data.epics);
+        if (boardId) {
+          // Single board — use the existing board-scoped epic endpoint.
+          const result = await getEpics(Number(boardId));
+          setEpics(result?.data?.epics ?? []);
+        } else {
+          // All projects or project-specific — single JQL query, no per-board calls.
+          const result = await getEpicsAll(projectKey || undefined);
+          setEpics(result?.data?.epics ?? []);
         }
-        console.log(result.data.epics);
       } catch (error) {
         console.error("Failed to fetch epics:", error);
+        toast.error("Failed to fetch epics");
         setEpics([]);
       } finally {
         setLoading(false);
@@ -42,7 +50,7 @@ export function EpicsPage() {
     };
 
     fetchEpics();
-  }, [boardId]);
+  }, [boardId, projectKey]);
 
   const completedCount = epics.filter((e) => e.done).length;
   const inProgressCount = epics.filter((e) => !e.done).length;
@@ -51,7 +59,13 @@ export function EpicsPage() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Epic Intelligence</h1>
-        <p className="text-gray-500 text-sm">Portfolio health, risk scoring, and delivery prediction</p>
+        <p className="text-gray-500 text-sm">
+          {boardId
+            ? "Epics for the selected board"
+            : projectKey
+              ? "Cumulative epics across all boards in the selected project"
+              : "Cumulative epics across all projects and boards"}
+        </p>
       </div>
 
       {/* Summary KPIs */}
@@ -82,14 +96,11 @@ export function EpicsPage() {
           <CardTitle>All Epics</CardTitle>
         </CardHeader>
         <CardContent>
-          {!boardId && (
-            <p className="text-gray-400 text-sm text-center py-8">Select a board to view epics</p>
-          )}
-          {boardId && loading && (
+          {loading && (
             <p className="text-gray-400 text-sm text-center py-8">Loading epics...</p>
           )}
-          {boardId && !loading && epics.length === 0 && (
-            <p className="text-gray-400 text-sm text-center py-8">No epics found for this board</p>
+          {!loading && epics.length === 0 && (
+            <p className="text-gray-400 text-sm text-center py-8">No epics found</p>
           )}
           {!loading && epics.length > 0 && (
             <div className="divide-y divide-gray-100">

@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getBoardService, getEpicsFromBoardService, getProjectService, loginService } from "../service/jiraService";
+import { getBoardService, getBoardStatsService, getEpicsFromBoardService, getEpicsFromJQLService, getProjectService, loginService } from "../service/jiraService";
 
 export const loginController = async (
   req: Request,
@@ -172,6 +172,58 @@ export const getEpicsController = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch epics",
+    });
+  }
+}
+
+export const getEpicsAllController = async (req: Request, res: Response) => {
+  const { jira_auth, jira_base_url } = req.cookies || {};
+  const projectKey = typeof req.query.projectKey === "string" ? req.query.projectKey : undefined;
+
+  if (!jira_auth || !jira_base_url) {
+    res.status(401).json({ success: false, message: "Unauthorized" });
+    return;
+  }
+
+  try {
+    const epics = await getEpicsFromJQLService(jira_base_url, jira_auth, projectKey);
+    res.status(200).json({ success: true, epics });
+  } catch (error: any) {
+    console.log(error?.response?.data || error);
+    res.status(500).json({ success: false, message: "Failed to fetch epics" });
+  }
+}
+
+export const getBoardStatsController = async (req: Request, res: Response) => {
+  const { jira_auth, jira_base_url } = req.cookies || {};
+  const { boardId } = req.params as { boardId?: string };
+  const projectKey = typeof req.query.projectKey === "string" ? req.query.projectKey : undefined;
+
+  if (!jira_auth || !jira_base_url) {
+    res.status(401).json({
+      success: false,
+      message: "Unauthorized",
+    });
+    return;
+  }
+
+  try {
+    const stats = await getBoardStatsService(jira_base_url, jira_auth, { boardId, projectKey });
+    res.status(200).json({
+      success: true,
+      stats,
+    });
+  } catch (error: any) {
+    console.log(error?.response?.data || error);
+
+    const jiraMessage =
+      error?.response?.data?.errorMessages?.[0] ||
+      error?.response?.data?.message ||
+      error?.message;
+
+    res.status(500).json({
+      success: false,
+      message: jiraMessage ? `Failed to fetch board stats: ${jiraMessage}` : "Failed to fetch board stats",
     });
   }
 }

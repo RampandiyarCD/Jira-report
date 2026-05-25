@@ -17,8 +17,7 @@ import { Label } from "./Label";
 import { logoutApi } from "../api/jira";
 
 const navItems = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { to: "/board", label: "Board Overview", icon: Layers },
+  { to: "/dashboard", label: "Dashboard", icon: Layers, exact: true},
   { to: "/sprints", label: "Sprint Analytics", icon: Zap },
   { to: "/compare", label: "Sprint Compare", icon: GitCompare },
   { to: "/epics", label: "Epic Intelligence", icon: Map },

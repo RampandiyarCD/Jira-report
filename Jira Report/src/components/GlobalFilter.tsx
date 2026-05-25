@@ -1,7 +1,7 @@
 import { Select } from './Select'
 import { Label } from './Label'
 import { getBoards, getProjects } from '../api/jira'
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export function GlobalFilters() {
   const [projects, setProjects] = useState<{ name: string; key: string }[]>([]);
@@ -13,34 +13,50 @@ export function GlobalFilters() {
     return localStorage.getItem("selected_board_id") || "";
   });
 
-  const projectLoader = async () => {
-    try {
-      const result = await getProjects();
-      if (result && result.data && result.data.projects) {
-        setProjects(result.data.projects);
-      }
-    } catch (error) {
-      console.error("Failed to load projects:", error);
-    }
-  };
+  // Tracks programmatic board resets so we don't dispatch a second filter-change event
+  const skipBoardDispatch = useRef(false);
 
   useEffect(() => {
+    const projectLoader = async () => {
+      try {
+        const result = await getProjects();
+        if (result && result.data && result.data.projects) {
+          setProjects(result.data.projects);
+        }
+      } catch (error) {
+        console.error("Failed to load projects:", error);
+      }
+    };
     projectLoader();
   }, []);
 
   useEffect(() => {
     localStorage.setItem("selected_project_key", selectedProject);
+    // Clear the board from localStorage immediately so Dashboard reads
+    // the correct (empty) board when this event fires, before the async
+    // board-loader effect has a chance to reset selectedBoard state.
+    localStorage.setItem("selected_board_id", "");
+    window.dispatchEvent(new Event("jira-filters-changed"));
   }, [selectedProject]);
 
   useEffect(() => {
     localStorage.setItem("selected_board_id", selectedBoard);
+    if (skipBoardDispatch.current) {
+      skipBoardDispatch.current = false;
+      return;
+    }
+    window.dispatchEvent(new Event("jira-filters-changed"));
   }, [selectedBoard]);
 
+  // Only re-run when the project changes — not when the board changes
   useEffect(() => {
     const boardLoader = async () => {
       if (!selectedProject) {
         setBoards([]);
-        setSelectedBoard("");
+        if (selectedBoard !== "") {
+          skipBoardDispatch.current = true;
+          setSelectedBoard("");
+        }
         return;
       }
       try {
@@ -48,25 +64,31 @@ export function GlobalFilters() {
         if (result && result.data && result.data.boards) {
           const loadedBoards = result.data.boards;
           setBoards(loadedBoards);
-          const boardExists = loadedBoards.some((b: any) => String(b.id) === String(selectedBoard));
-          if (!boardExists) {
+          // selectedBoard captured from closure at the time project changed — correct
+          const boardExists = loadedBoards.some((b: { id: string }) => String(b.id) === String(selectedBoard));
+          if (!boardExists && selectedBoard !== "") {
+            skipBoardDispatch.current = true;
             setSelectedBoard("");
           }
         }
       } catch (error) {
         console.error("Failed to load boards:", error);
         setBoards([]);
-        setSelectedBoard("");
+        if (selectedBoard !== "") {
+          skipBoardDispatch.current = true;
+          setSelectedBoard("");
+        }
       }
     };
 
     boardLoader();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProject]);
 
   return (
-    <div className="flex flex-wrap items-center gap-3 px-6 py-2 border-b border-gray-100 bg-white text-sm">
+    <div className="flex flex-wrap items-center gap-3 px-6 py-2 border-b border-gray-100 bg-white text-sm text-gray-900">
       <div className="flex items-center gap-1.5">
-        <Label htmlFor="gf-projects" className="text-xs text-gray-500 whitespace-nowrap">
+        <Label htmlFor="gf-projects" className="text-xs text-gray-900 whitespace-nowrap">
           Project
         </Label>
         <Select
@@ -82,7 +104,7 @@ export function GlobalFilters() {
             </option>
           ))}
         </Select>
-        <Label htmlFor="gf-board" className="text-xs text-gray-500 whitespace-nowrap">
+        <Label htmlFor="gf-board" className="text-xs text-gray-900 whitespace-nowrap">
           Boards
         </Label>
         <Select
