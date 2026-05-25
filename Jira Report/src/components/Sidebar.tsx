@@ -4,13 +4,17 @@ import {
   GitCompare,
   Layers,
   LayoutDashboard,
+  LogOut,
   Map,
+  Settings,
   Zap,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../utils/utils";
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { Button } from "./Button";
+import { Label } from "./Label";
+import { logoutApi } from "../api/jira";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -20,8 +24,22 @@ const navItems = [
   { to: "/epics", label: "Epic Intelligence", icon: Map },
 ];
 
+const name = localStorage.getItem("user_name")
+
+
 export const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    try {
+      await logoutApi();
+      localStorage.clear()
+      navigate("/");
+    } catch (error) {
+      console.error("Failed to logout:", error);
+    }
+  };
 
   return (
     <aside
@@ -39,6 +57,11 @@ export const Sidebar = () => {
             <p className="text-sm font-bold leading-tight">Jira Intelligence</p>
           </div>
         )}
+      </div>
+      <div className="px-4 py-3 border-b border-slate-700">
+        <div>
+          <Label className="text-sm font-bold text-white leading-tight">{name}</Label>
+        </div>
       </div>
       <nav className="flex-1 py-4 overflow-y-auto">
         <ul className="space-y-1 px-2">
@@ -64,6 +87,31 @@ export const Sidebar = () => {
           ))}
         </ul>
       </nav>
+       <div className="px-2 py-3 border-t border-slate-700">
+        <NavLink
+          to="/settings"
+          className={({ isActive }) =>
+            cn(
+              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors',
+              isActive
+                ? 'bg-blue-600 text-white'
+                : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+            )
+          }
+          title={collapsed ? 'Settings' : undefined}
+        >
+          <Settings size={18} className="shrink-0" />
+          {!collapsed && <span>Settings</span>}
+        </NavLink>
+        <Button
+          onClick={handleLogout}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+          title={collapsed ? 'Logout' : undefined}
+        >
+          <LogOut size={18} className="shrink-0" />
+          {!collapsed && <span>Logout</span>}
+        </Button>
+      </div>
       <Button
         name={
           collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={12} />

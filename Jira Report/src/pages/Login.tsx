@@ -38,8 +38,10 @@ export const Login = () => {
     setIsLoading(true);
     try {
       const response = await handleLogin(email, url, token);
+
       if (response.status === 200 && response.data?.success) {
         navigate("/dashboard");
+        localStorage.setItem("user_name", response.data.user.displayName)
       } else {
         showToast("Login failed. Please check your credentials.");
       }
@@ -152,6 +154,7 @@ export const Login = () => {
             {/* Submit Button */}
             <div className="pt-2">
               <Button
+                type="submit"
                 name={
                   isLoading ? (
                     <>

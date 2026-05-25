@@ -1,4 +1,5 @@
 import type { InputHTMLAttributes, ChangeEvent } from "react";
+import { cn } from "../utils/utils";
 
 interface Inputprops extends Omit<InputHTMLAttributes<HTMLInputElement>, "onChange"> {
   name?: string;
@@ -25,15 +26,21 @@ export const Input = ({
 }: Inputprops) => {
   const inputId = id || name?.toLowerCase().replace(/\s+/g, "-");
   return (
-    <div className={containerClassName}>
+    <div className={cn(!containerClassName && "flex flex-col gap-1.5", containerClassName)}>
       {name && (
-        <label htmlFor={inputId} className={labelClassName}>
+        <label
+          htmlFor={inputId}
+          className={cn("text-xs font-semibold text-slate-400 uppercase tracking-wider", labelClassName)}
+        >
           {name}
         </label>
       )}
       <input
         id={inputId}
-        className={className}
+        className={cn(
+          "w-full bg-white border border-slate-200 rounded-lg px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors duration-200 disabled:opacity-50 shadow-sm",
+          className
+        )}
         type={type}
         placeholder={placeholder}
         value={value}
@@ -43,3 +50,4 @@ export const Input = ({
     </div>
   );
 };
+

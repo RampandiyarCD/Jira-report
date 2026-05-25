@@ -2,14 +2,19 @@ import { Routes, Route, Outlet } from "react-router-dom"
 import { Login } from "./pages/Login"
 import { Dashboard } from "./pages/Dashboard"
 import { EpicsPage } from "./pages/EpicPage"
+import { SettingsPage } from "./pages/Settings"
 import { Sidebar } from "./components/Sidebar"
+import { GlobalFilters } from "./components/GlobalFilter"
 
 const AppLayout = () => {
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen overflow-hidden">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto">
-        <Outlet />
+      <main className="flex-1 flex flex-col min-w-0 bg-slate-50">
+        <GlobalFilters />
+        <div className="flex-1 overflow-y-auto">
+          <Outlet />
+        </div>
       </main>
     </div>
   )
@@ -23,6 +28,7 @@ function App() {
         <Route element={<AppLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/epics" element={<EpicsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Routes>
     </div>
