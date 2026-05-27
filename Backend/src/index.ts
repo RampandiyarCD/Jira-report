@@ -19,9 +19,13 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 const PORT = process.env.PORT;
+const DETAIL_REPORT_TIMEOUT_MS = 15 * 60 * 1000;
 
 app.use("/jira", jiraRouter);
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server running .....`);
 });
+
+server.requestTimeout = DETAIL_REPORT_TIMEOUT_MS;
+server.headersTimeout = DETAIL_REPORT_TIMEOUT_MS + 60 * 1000;

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getBoardController, getBoardStatsController, getEpicsAllController, getEpicsController, getProjectController, loginController, logoutController } from "../controller/jiraController";
+import { getBoardController, getBoardIssueSummaryController, getBoardStatsController, getBoardStatsDetailsController, getEpicsAllController, getEpicsController, getProjectController, loginController, logoutController } from "../controller/jiraController";
 
 const jiraRouter = Router();
 
@@ -11,5 +11,9 @@ jiraRouter.get("/getepics", getEpicsAllController);
 jiraRouter.get("/getepics/:boardId", getEpicsController);
 jiraRouter.get("/getboardstats", getBoardStatsController);
 jiraRouter.get("/getboardstats/:boardId", getBoardStatsController);
+jiraRouter.get("/getboardstatsdetails", getBoardStatsDetailsController);
+jiraRouter.get("/getboardstatsdetails/:boardId", getBoardStatsDetailsController);
+jiraRouter.get("/getboardissuessummary", getBoardIssueSummaryController);
+jiraRouter.get("/getboardissuessummary/:boardId", getBoardIssueSummaryController);
 
 export default jiraRouter;

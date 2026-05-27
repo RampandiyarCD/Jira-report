@@ -513,6 +513,18 @@
     "@tailwindcss/oxide" "4.3.0"
     tailwindcss "4.3.0"
 
+"@tanstack/query-core@5.100.14":
+  version "5.100.14"
+  resolved "https://eacp.energyaustralia.com.au/nexus/repository/npm-group/@tanstack/query-core/-/query-core-5.100.14.tgz#6bf11c9a6a33dbbbba21f05d880b93930d80000c"
+  integrity sha512-5X41dGpxgeaHISCRW2oYwcSycZeULZzAunaudXT9ov1KOTj9xwt0CH6hbwqP1/z74ZWF7rYFnDpyYH07XFcZew==
+
+"@tanstack/react-query@^5.100.14":
+  version "5.100.14"
+  resolved "https://eacp.energyaustralia.com.au/nexus/repository/npm-group/@tanstack/react-query/-/react-query-5.100.14.tgz#799fe305421fd84bf2f6df40930c859c945b42ab"
+  integrity sha512-oOr6aRdSFEwWhzxEkD/9ZcItM3+LjBSkeVmadWKwUssAHTsqd/7bOjWrX4AbvEkoEhgAxzN0Xk6H/aYzXiYBAw==
+  dependencies:
+    "@tanstack/query-core" "5.100.14"
+
 "@tybys/wasm-util@^0.10.1":
   version "0.10.2"
   resolved "https://eacp.energyaustralia.com.au/nexus/repository/npm-group/@tybys/wasm-util/-/wasm-util-0.10.2.tgz#12b3a1b33db1f9cad4ddff1f604ab7dd00bf464e"
@@ -1638,6 +1650,11 @@ react-hot-toast@^2.6.0:
   dependencies:
     csstype "^3.1.3"
     goober "^2.1.16"
+
+react-is@^19.2.6:
+  version "19.2.6"
+  resolved "https://eacp.energyaustralia.com.au/nexus/repository/npm-group/react-is/-/react-is-19.2.6.tgz#aeee6159b159eb7f520d672cffcc69e7052d288f"
+  integrity sha512-XjBR15BhXuylgWGuslhDKqlSayuqvqBX91BP8pauG8kd1zY8kotkNWbXksTCNRarse4kuGbe2kIY05ARtwNIvw==
 
 "react-redux@8.x.x || 9.x.x":
   version "9.3.0"

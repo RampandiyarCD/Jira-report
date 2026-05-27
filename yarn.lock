@@ -2,3 +2,14 @@
 # yarn lockfile v1
 
 
+"@tanstack/query-core@5.100.14":
+  version "5.100.14"
+  resolved "https://eacp.energyaustralia.com.au/nexus/repository/npm-group/@tanstack/query-core/-/query-core-5.100.14.tgz#6bf11c9a6a33dbbbba21f05d880b93930d80000c"
+  integrity sha512-5X41dGpxgeaHISCRW2oYwcSycZeULZzAunaudXT9ov1KOTj9xwt0CH6hbwqP1/z74ZWF7rYFnDpyYH07XFcZew==
+
+"@tanstack/react-query@^5.100.14":
+  version "5.100.14"
+  resolved "https://eacp.energyaustralia.com.au/nexus/repository/npm-group/@tanstack/react-query/-/react-query-5.100.14.tgz#799fe305421fd84bf2f6df40930c859c945b42ab"
+  integrity sha512-oOr6aRdSFEwWhzxEkD/9ZcItM3+LjBSkeVmadWKwUssAHTsqd/7bOjWrX4AbvEkoEhgAxzN0Xk6H/aYzXiYBAw==
+  dependencies:
+    "@tanstack/query-core" "5.100.14"

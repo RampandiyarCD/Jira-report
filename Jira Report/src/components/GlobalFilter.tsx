@@ -3,6 +3,7 @@ import { Label } from './Label'
 import { getBoards, getProjects } from '../api/jira'
 import { useEffect, useRef, useState } from 'react';
 
+
 export function GlobalFilters() {
   const [projects, setProjects] = useState<{ name: string; key: string }[]>([]);
   const [boards, setBoards] = useState<{ name: string; id: string; projectKey: string; type: string }[]>([]);
@@ -12,6 +13,7 @@ export function GlobalFilters() {
   const [selectedBoard, setSelectedBoard] = useState<string>(() => {
     return localStorage.getItem("selected_board_id") || "";
   });
+  const [loadingBoards, setLoadingBoards] = useState(false);
 
   // Tracks programmatic board resets so we don't dispatch a second filter-change event
   const skipBoardDispatch = useRef(false);
@@ -57,18 +59,28 @@ export function GlobalFilters() {
           skipBoardDispatch.current = true;
           setSelectedBoard("");
         }
+        setLoadingBoards(false);
         return;
       }
+      setLoadingBoards(true);
       try {
         const result = await getBoards(selectedProject);
         if (result && result.data && result.data.boards) {
           const loadedBoards = result.data.boards;
           setBoards(loadedBoards);
-          // selectedBoard captured from closure at the time project changed — correct
-          const boardExists = loadedBoards.some((b: { id: string }) => String(b.id) === String(selectedBoard));
-          if (!boardExists && selectedBoard !== "") {
-            skipBoardDispatch.current = true;
-            setSelectedBoard("");
+
+          if (loadedBoards.length === 1) {
+            // Auto-select the only board so stats display immediately.
+            if (String(selectedBoard) !== String(loadedBoards[0].id)) {
+              setSelectedBoard(String(loadedBoards[0].id));
+            }
+          } else {
+            // Multiple or zero boards — clear an invalid selection.
+            const boardExists = loadedBoards.some((b: { id: string }) => String(b.id) === String(selectedBoard));
+            if (!boardExists && selectedBoard !== "") {
+              skipBoardDispatch.current = true;
+              setSelectedBoard("");
+            }
           }
         }
       } catch (error) {
@@ -78,11 +90,13 @@ export function GlobalFilters() {
           skipBoardDispatch.current = true;
           setSelectedBoard("");
         }
+      } finally {
+        setLoadingBoards(false);
       }
     };
 
     boardLoader();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProject]);
 
   return (
@@ -112,7 +126,7 @@ export function GlobalFilters() {
           className="h-7 text-xs py-0 w-full"
           value={selectedBoard}
           onChange={(e) => setSelectedBoard(e.target.value)}
-          disabled={!selectedProject}
+          disabled={!selectedProject || loadingBoards}
         >
           <option value="">All boards</option>
           {boards.map((board) => (
@@ -121,6 +135,9 @@ export function GlobalFilters() {
             </option>
           ))}
         </Select>
+        {loadingBoards && (
+          <span className="ml-2 text-xs text-gray-400 animate-pulse">Loading boards...</span>
+        )}
       </div>
     </div>
   );

@@ -1,19 +1,22 @@
 import axios, { Axios } from "axios";
 import type { AxiosResponse } from "axios";
 
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-const apiCache = new Map<string, { data: AxiosResponse<any>; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes (dynamic data: stats, issues)
+const STABLE_CACHE_TTL = 15 * 60 * 1000; // 15 minutes (stable data: projects, boards, epics)
+const DETAILS_CACHE_TTL = 30 * 60 * 1000; // 30 minutes (slow detailed breakdowns)
+const DETAILS_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+const apiCache = new Map<string, { data: AxiosResponse<unknown>; timestamp: number; ttl: number }>();
 
-function getCached(key: string): AxiosResponse<any> | null {
+function getCached(key: string): AxiosResponse<unknown> | null {
   const entry = apiCache.get(key);
-  if (entry && Date.now() - entry.timestamp < CACHE_TTL) {
+  if (entry && Date.now() - entry.timestamp < entry.ttl) {
     return entry.data;
   }
   return null;
 }
 
-function setCache(key: string, data: AxiosResponse<any>) {
-  apiCache.set(key, { data, timestamp: Date.now() });
+function setCache(key: string, data: AxiosResponse<unknown>, ttl = CACHE_TTL) {
+  apiCache.set(key, { data, timestamp: Date.now(), ttl });
 }
 
 export const clearApiCache = () => apiCache.clear();
@@ -32,11 +35,21 @@ export const logoutApi = async () => {
 }
 
 export const getProjects = async () => {
-  return await api.get("/getProjects");
+  const cacheKey = "projects_list";
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+  const result = await api.get("/getProjects");
+  setCache(cacheKey, result, STABLE_CACHE_TTL);
+  return result;
 }
 
 export const getBoards = async (projectKey: string) => {
-  return await api.get(`/getBoards/${projectKey}`);
+  const cacheKey = `boards_project_${projectKey}`;
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+  const result = await api.get(`/getBoards/${projectKey}`);
+  setCache(cacheKey, result, STABLE_CACHE_TTL);
+  return result;
 }
 
 export const getBoardIssues = async (boardId: number) => {
@@ -48,14 +61,40 @@ export const getEpics = async (boardId: number) => {
   const cached = getCached(cacheKey);
   if (cached) return cached;
   const result = await api.get(`/getepics/${boardId}`);
-  setCache(cacheKey, result);
+  setCache(cacheKey, result, STABLE_CACHE_TTL);
   return result;
 }
 
+export const getBoardIssueSummary = async (options?: { boardId?: number; projectKey?: string }) => {
+  const cacheKey = options?.boardId != null
+    ? `issuessummary_board_${options.boardId}`
+    : options?.projectKey
+      ? `issuessummary_project_${options.projectKey}`
+      : `issuessummary_all`;
+
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
+  let result: AxiosResponse<unknown>;
+  if (options?.boardId != null) {
+    result = await api.get(`/getboardissuessummary/${options.boardId}`);
+  } else {
+    result = await api.get(`/getboardissuessummary`, {
+      params: options?.projectKey ? { projectKey: options.projectKey } : undefined,
+    });
+  }
+  setCache(cacheKey, result);
+  return result;
+}
 export const getEpicsAll = async (projectKey?: string) => {
-  return await api.get(`/getepics`, {
+  const cacheKey = projectKey ? `epicsall_project_${projectKey}` : `epicsall_all`;
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+  const result = await api.get(`/getepics`, {
     params: projectKey ? { projectKey } : undefined,
   });
+  setCache(cacheKey, result, STABLE_CACHE_TTL);
+  return result;
 }
 
 export const getBoardStats = async (options?: { boardId?: number; projectKey?: string }) => {
@@ -68,7 +107,7 @@ export const getBoardStats = async (options?: { boardId?: number; projectKey?: s
   const cached = getCached(cacheKey);
   if (cached) return cached;
 
-  let result: AxiosResponse<any>;
+  let result: AxiosResponse<unknown>;
   if (options?.boardId != null) {
     result = await api.get(`/getboardstats/${options.boardId}`);
   } else {
@@ -77,5 +116,30 @@ export const getBoardStats = async (options?: { boardId?: number; projectKey?: s
     });
   }
   setCache(cacheKey, result);
+  return result;
+}
+
+export const getBoardStatsDetails = async (options?: { boardId?: number; projectKey?: string }) => {
+  const cacheKey = options?.boardId != null
+    ? `boardstatsdetails_board_${options.boardId}`
+    : options?.projectKey
+      ? `boardstatsdetails_project_${options.projectKey}`
+      : `boardstatsdetails_all`;
+
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
+  let result: AxiosResponse<unknown>;
+  if (options?.boardId != null) {
+    result = await api.get(`/getboardstatsdetails/${options.boardId}`, {
+      timeout: DETAILS_TIMEOUT_MS,
+    });
+  } else {
+    result = await api.get(`/getboardstatsdetails`, {
+      params: options?.projectKey ? { projectKey: options.projectKey } : undefined,
+      timeout: DETAILS_TIMEOUT_MS,
+    });
+  }
+  setCache(cacheKey, result, DETAILS_CACHE_TTL);
   return result;
 }
