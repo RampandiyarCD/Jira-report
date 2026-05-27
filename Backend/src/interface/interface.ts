@@ -8,5 +8,7 @@ export interface Epic {
     name: string;
     summary: string;
     status: string;
-    done: boolean;
+    progress: number;
+    creator: string;
+    creatorAvatar: string;
 }

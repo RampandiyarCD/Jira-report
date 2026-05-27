@@ -1,11 +1,18 @@
+import { lazy, Suspense } from "react"
 import { Routes, Route, Outlet } from "react-router-dom"
-import { Login } from "./pages/Login"
-import { Dashboard } from "./pages/Dashboard"
-import { EpicsPage } from "./pages/EpicPage"
-import { SettingsPage } from "./pages/Settings"
 import { Sidebar } from "./components/Sidebar"
 import { GlobalFilters } from "./components/GlobalFilter"
 import { FilterProvider } from "./context/FilterContext"
+
+// Lazy load route pages (Named exports)
+const Login = lazy(() => import("./pages/Login").then((m) => ({ default: m.Login })))
+const Dashboard = lazy(() => import("./pages/Dashboard").then((m) => ({ default: m.Dashboard })))
+const EpicsPage = lazy(() => import("./pages/EpicPage").then((m) => ({ default: m.EpicsPage })))
+const EpicDetailsPage = lazy(() => import("./pages/EpicDetailsPage").then((m) => ({ default: m.EpicDetailsPage })))
+const SettingsPage = lazy(() => import("./pages/Settings").then((m) => ({ default: m.SettingsPage })))
+
+// Lazy load route pages (Default export)
+const ZephyrPage = lazy(() => import("./pages/ZephyrPage"))
 
 const AppLayout = () => {
   return (
@@ -24,14 +31,24 @@ const AppLayout = () => {
 function App() {
   return (
     <FilterProvider>
-      <Routes>
-        <Route path="/" element={<Login />} />
-        <Route element={<AppLayout />}>
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/epics" element={<EpicsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Route>
-      </Routes>
+      <Suspense
+        fallback={
+          <div className="flex items-center justify-center h-screen bg-slate-50">
+            <div className="text-sm font-semibold text-slate-400 animate-pulse">Loading page...</div>
+          </div>
+        }
+      >
+        <Routes>
+          <Route path="/" element={<Login />} />
+          <Route element={<AppLayout />}>
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/epics" element={<EpicsPage />} />
+            <Route path="/epics/:epicKey" element={<EpicDetailsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/zephyr/:issueKey" element={<ZephyrPage />} />
+          </Route>
+        </Routes>
+      </Suspense>
     </FilterProvider>
   )
 }

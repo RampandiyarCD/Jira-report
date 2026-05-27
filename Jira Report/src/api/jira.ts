@@ -29,3 +29,26 @@ export const getBoardIssues = async (boardId: number) => {
 export const getEpics = async (boardId: number) => {
   return await api.get(`/getepics/${boardId}`);
 }
+
+export const getEpicDetailsPage = async (epicKey: string, refresh = false) => {
+  return await api.get(`/getepicdetailspage/${epicKey}${refresh ? "?refresh=true" : ""}`);
+}
+
+// Zephyr APIs
+export const saveZephyrConfig = async (config: {
+  zephyrAccessKey: string;
+  zephyrSecretKey: string;
+  zephyrAccountId: string;
+  zephyrBaseUrl: string;
+  zephyrProjectKey?: string;
+}) => {
+  return await api.post("/savezephyrconfig", config);
+}
+
+export const getZephyrTests = async (issueKey: string, projectKey?: string) => {
+  return await api.get(`/getzephyrtests/${issueKey}${projectKey ? `?projectKey=${projectKey}` : ""}`);
+}
+
+export const checkZephyrIssues = async (issueKeys: string[], projectKey?: string) => {
+  return await api.post("/checkzephyrissues", { issueKeys, projectKey });
+}
