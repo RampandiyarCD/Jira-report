@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "../components/Card";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getEpics } from "../api/jira";
 import { useFilter } from "../context/FilterContext";
 import { Search, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2, Clock, X, RotateCw, Layers } from "lucide-react";
@@ -24,7 +24,7 @@ export function EpicsPage() {
   const [epics, setEpics] = useState<Epic[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "inprogress">("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [jiraStatusFilter, setJiraStatusFilter] = useState("all");
   const [sortKey, setSortKey] = useState<keyof Epic>("key");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
@@ -54,8 +54,9 @@ export function EpicsPage() {
   };
 
   useEffect(() => {
-    fetchData();
-  }, [boardId]);
+    const cleanup = fetchData();
+    return cleanup;
+  }, [fetchData]);
 
   const uniqueStatuses = Array.from(new Set(epics.map((e) => e.status))).filter(Boolean);
 
@@ -74,11 +75,34 @@ export function EpicsPage() {
   });
 
   const handleSort = (key: keyof Epic) => {
-    sortKey === key ? setSortDirection((d) => (d === "asc" ? "desc" : "asc")) : (setSortKey(key), setSortDirection("asc"));
+    if (sortKey === key) {
+      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDirection("asc");
+    }
   };
 
   const hasFilters = searchQuery || statusFilter !== "all" || jiraStatusFilter !== "all";
-  const resetFilters = () => { setSearchQuery(""); setStatusFilter("all"); setJiraStatusFilter("all"); };
+  const resetFilters = () => {
+    setSearchQuery("");
+    setStatusFilter("all");
+    setJiraStatusFilter("all");
+  };
+
+  const handleStatusFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if ((STATUS_FILTER_VALUES as readonly string[]).includes(val)) {
+      setStatusFilter(val as StatusFilter);
+    }
+  };
+
+  const columns: { label: string; key: keyof Epic; ariaSortLabel?: string }[] = [
+    { label: "Key", key: "key" },
+    { label: "Epic Name", key: "name" },
+    { label: "Jira Status", key: "status" },
+    { label: "Done", key: "done" },
+  ];
 
   return (
     <div className="p-6 space-y-6">
@@ -141,10 +165,11 @@ export function EpicsPage() {
             <div className="space-y-4">
               <div className="flex flex-col md:flex-row md:items-end gap-4 pb-4 border-b border-slate-100">
                 <div className="flex-1 relative">
-                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">Search Epics</label>
+                  <label htmlFor="epic-search" className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">Search Epics</label>
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
                     <input
+                      id="epic-search"
                       type="text"
                       className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-9 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors duration-200 shadow-sm"
                       placeholder="Search by key, name, or summary..."
@@ -152,14 +177,18 @@ export function EpicsPage() {
                       onChange={(e) => setSearchQuery(e.target.value)}
                     />
                     {searchQuery && (
-                      <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
+                      <button
+                        aria-label="Clear search"
+                        onClick={() => setSearchQuery("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
                         <X className="w-4 h-4" />
                       </button>
                     )}
                   </div>
                 </div>
                 <div className="w-full md:w-48">
-                  <Select name="Completion" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)}>
+                  <Select name="Completion" value={statusFilter} onChange={handleStatusFilterChange}>
                     <option value="all">All Completion</option>
                     <option value="completed">Completed</option>
                     <option value="inprogress">In Progress</option>
@@ -275,4 +304,3 @@ export function EpicsPage() {
     </div>
   );
 }
-
