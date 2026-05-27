@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "../components/Card";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getEpics } from "../api/jira";
 import { useFilter } from "../context/FilterContext";
 import { Search, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2, Clock, X, RotateCw, Layers } from "lucide-react";
@@ -17,6 +17,9 @@ interface Epic {
   creatorAvatar: string;
 }
 
+const STATUS_FILTER_VALUES = ["all", "completed", "inprogress"] as const;
+type StatusFilter = (typeof STATUS_FILTER_VALUES)[number];
+
 const epicCache: Record<string, { epics: Epic[]; timestamp: string }> = {};
 
 export function EpicsPage() {
@@ -32,7 +35,7 @@ export function EpicsPage() {
 
   const { selectedBoard: boardId } = useFilter();
 
-  const fetchData = (force = false) => {
+  const fetchData = useCallback((force = false) => {
     if (!boardId) return setEpics([]);
     if (!force && epicCache[boardId]) {
       setEpics(epicCache[boardId].epics);
@@ -51,11 +54,10 @@ export function EpicsPage() {
       })
       .catch((err) => { console.error(err); setEpics([]); })
       .finally(() => setLoading(false));
-  };
+  }, [boardId]);
 
   useEffect(() => {
-    const cleanup = fetchData();
-    return cleanup;
+    fetchData();
   }, [fetchData]);
 
   const uniqueStatuses = Array.from(new Set(epics.map((e) => e.status))).filter(Boolean);
@@ -97,12 +99,6 @@ export function EpicsPage() {
     }
   };
 
-  const columns: { label: string; key: keyof Epic; ariaSortLabel?: string }[] = [
-    { label: "Key", key: "key" },
-    { label: "Epic Name", key: "name" },
-    { label: "Jira Status", key: "status" },
-    { label: "Done", key: "done" },
-  ];
 
   return (
     <div className="p-6 space-y-6">
@@ -224,15 +220,22 @@ export function EpicsPage() {
                           { label: "Progress", key: "progress" as keyof Epic },
                           { label: "Jira Status", key: "status" as keyof Epic },
                         ].map((col) => (
-                          <TableHead key={col.key} className="cursor-pointer hover:bg-slate-100 hover:text-slate-700 transition-colors" onClick={() => handleSort(col.key)}>
-                            <div className="flex items-center gap-1.5 select-none">
+                          <TableHead
+                            key={col.key}
+                            aria-sort={sortKey === col.key ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}
+                            className="hover:bg-slate-100 transition-colors"
+                          >
+                            <button
+                              onClick={() => handleSort(col.key)}
+                              className="flex items-center gap-1.5 select-none w-full cursor-pointer hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset rounded"
+                            >
                               {col.label}
                               {sortKey === col.key ? (
                                 sortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />
                               ) : (
                                 <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 opacity-50" />
                               )}
-                            </div>
+                            </button>
                           </TableHead>
                         ))}
                       </TableRow>
