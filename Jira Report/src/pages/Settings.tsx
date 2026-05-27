@@ -1,10 +1,82 @@
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/Card'
 import { Button } from '../components/Button'
 import { Input } from '../components/Input'
-import { Label } from '../components/Label'
-import { Select } from '../components/Select'
+import { saveZephyrConfig } from '../api/jira'
+import { CheckCircle2, AlertCircle } from 'lucide-react'
+import { useFilter } from '../context/FilterContext'
 
 export function SettingsPage() {
+  const { selectedProject } = useFilter();
+
+  // Zephyr states
+  const [zephyrAccessKey, setZephyrAccessKey] = useState(() => localStorage.getItem("zephyr_access_key") || "")
+  const [zephyrSecretKey, setZephyrSecretKey] = useState(() => localStorage.getItem("zephyr_secret_key") || "")
+  
+  const [zephyrAccountId, setZephyrAccountId] = useState(() => {
+    return localStorage.getItem("zephyr_account_id") || localStorage.getItem("user_account_id") || "";
+  })
+  
+  const [zephyrBaseUrl, setZephyrBaseUrl] = useState(() => {
+    return localStorage.getItem("zephyr_base_url") || "https://prod-api.zephyr4jiracloud.com/connect";
+  })
+  
+  const [zephyrProjectKey, setZephyrProjectKey] = useState(() => {
+    return localStorage.getItem("zephyr_project_key") || selectedProject || localStorage.getItem("selected_project_key") || "";
+  })
+  const [zephyrSaving, setZephyrSaving] = useState(false)
+  const [zephyrStatus, setZephyrStatus] = useState<{ type: "success" | "error"; message: string } | null>(null)
+
+  // Auto-populate Account ID if it becomes available in localStorage
+  useEffect(() => {
+    if (!zephyrAccountId) {
+      const loggedInAccountId = localStorage.getItem("user_account_id");
+      if (loggedInAccountId) {
+        setZephyrAccountId(loggedInAccountId);
+      }
+    }
+  }, [zephyrAccountId]);
+
+  // Auto-populate Project Key from global filter if not explicitly set yet
+  useEffect(() => {
+    if (selectedProject) {
+      setZephyrProjectKey(selectedProject);
+    }
+  }, [selectedProject]);
+
+  const handleSaveZephyr = async () => {
+    if (!zephyrAccessKey || !zephyrSecretKey || !zephyrAccountId || !zephyrBaseUrl) {
+      setZephyrStatus({ type: "error", message: "Access Key, Secret Key, Account ID, and Base URL are required" })
+      return
+    }
+
+    setZephyrSaving(true)
+    setZephyrStatus(null)
+    try {
+      await saveZephyrConfig({
+        zephyrAccessKey,
+        zephyrSecretKey,
+        zephyrAccountId,
+        zephyrBaseUrl,
+        zephyrProjectKey,
+      })
+
+      // Store in localStorage
+      localStorage.setItem("zephyr_product_type", "zephyr-squad")
+      localStorage.setItem("zephyr_access_key", zephyrAccessKey)
+      localStorage.setItem("zephyr_secret_key", zephyrSecretKey)
+      localStorage.setItem("zephyr_account_id", zephyrAccountId)
+      localStorage.setItem("zephyr_base_url", zephyrBaseUrl)
+      localStorage.setItem("zephyr_project_key", zephyrProjectKey)
+
+      setZephyrStatus({ type: "success", message: "Zephyr configuration saved successfully!" })
+    } catch (err: any) {
+      setZephyrStatus({ type: "error", message: err?.response?.data?.message || "Failed to save Zephyr configuration" })
+    } finally {
+      setZephyrSaving(false)
+    }
+  }
+
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-6">
       <div>
@@ -14,73 +86,80 @@ export function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Zephyr Scale Configuration</CardTitle>
+          <CardTitle className="text-base">Zephyr Configuration</CardTitle>
           <CardDescription>
-            Optional: Configure Zephyr Scale integration for test execution reports
+            Optional: Configure Zephyr Squad / Zephyr for Jira Cloud integration for test execution reports
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="zephyrProductType">Zephyr Product Type</Label>
-            <Select id="zephyrProductType">
-              <option value="">Select Zephyr product...</option>
-              <option value="zephyr-scale">Zephyr Scale (v2 API - Bearer Token)</option>
-              <option value="zephyr-squad">Zephyr Squad / Zephyr for Jira Cloud (v1 API - JWT)</option>
-            </Select>
-            <p className="text-xs text-gray-400">
-              <strong>How to check:</strong> Go to Jira → Apps → Zephyr. If you see "Zephyr Scale" in the title, select v2. 
-              If it says "Zephyr Squad" or "Zephyr for Jira", select v1.
+          <div className="space-y-4">
+            <Input
+              name="Access Key"
+              id="zephyrAccessKey"
+              type="text"
+              placeholder="Your Zephyr Squad Access Key"
+              containerClassName="space-y-1.5"
+              value={zephyrAccessKey}
+              onChange={(e) => setZephyrAccessKey(e.target.value)}
+            />
+            <Input
+              name="Secret Key"
+              id="zephyrSecretKey"
+              type="password"
+              placeholder="Your Zephyr Squad Secret Key"
+              containerClassName="space-y-1.5"
+              value={zephyrSecretKey}
+              onChange={(e) => setZephyrSecretKey(e.target.value)}
+            />
+            <Input
+              name="Account ID"
+              id="zephyrAccountId"
+              type="text"
+              placeholder="Your Atlassian Account ID"
+              containerClassName="space-y-1.5"
+              value={zephyrAccountId}
+              onChange={(e) => setZephyrAccountId(e.target.value)}
+            />
+            <p className="text-xs text-gray-400 -mt-2">
+              Found in your Atlassian profile URL or Zephyr API settings
             </p>
+            <Input
+              name="Base URL"
+              id="zephyrBaseUrl"
+              type="text"
+              placeholder="https://prod-api.zephyr4jiracloud.com/connect"
+              containerClassName="space-y-1.5"
+              value={zephyrBaseUrl}
+              onChange={(e) => setZephyrBaseUrl(e.target.value)}
+            />
+            <Input
+              name="Project Key (Optional)"
+              id="zephyrProjectKey"
+              type="text"
+              placeholder="e.g., PROJ"
+              containerClassName="space-y-1.5"
+              value={zephyrProjectKey}
+              onChange={(e) => setZephyrProjectKey(e.target.value)}
+            />
           </div>
 
-          <Input
-            name="Access Key"
-            id="zephyrAccessKey"
-            type="text"
-            placeholder="Your Zephyr access key"
-            containerClassName="space-y-1.5"
-          />
-          <p className="text-xs text-gray-400 -mt-2">
-            Generate at Zephyr Scale &gt; API Access Tokens
-          </p>
+          {zephyrStatus && (
+            <div className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg ${
+              zephyrStatus.type === "success" 
+                ? "bg-green-50 text-green-700 border border-green-200" 
+                : "bg-red-50 text-red-700 border border-red-200"
+            }`}>
+              {zephyrStatus.type === "success" ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+              {zephyrStatus.message}
+            </div>
+          )}
 
-          <Input
-            name="Secret Key"
-            id="zephyrSecretKey"
-            type="password"
-            placeholder="Your Zephyr secret key"
-            containerClassName="space-y-1.5"
-          />
-
-          <Input
-            name="Account ID"
-            id="zephyrAccountId"
-            type="text"
-            placeholder="Your Atlassian Account ID"
-            containerClassName="space-y-1.5"
-          />
-          <p className="text-xs text-gray-400 -mt-2">
-            Found in your Atlassian profile URL or Zephyr API settings
-          </p>
-
-          <Input
-            name="Base URL"
-            id="zephyrBaseUrl"
-            type="text"
-            placeholder="https://api.zephyrscale.smartbear.com/v2"
-            containerClassName="space-y-1.5"
-          />
-
-          <Input
-            name="Project Key (Optional)"
-            id="zephyrProjectKey"
-            type="text"
-            placeholder="e.g., PROJ"
-            containerClassName="space-y-1.5"
-          />
-
-          <Button variant="secondary">
-            Save Zephyr Configuration
+          <Button 
+            variant="secondary" 
+            onClick={handleSaveZephyr}
+            disabled={zephyrSaving}
+          >
+            {zephyrSaving ? "Saving..." : "Save Zephyr Configuration"}
           </Button>
         </CardContent>
       </Card>

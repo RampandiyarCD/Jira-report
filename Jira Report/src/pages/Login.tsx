@@ -42,6 +42,7 @@ export const Login = () => {
       if (response.status === 200 && response.data?.success) {
         navigate("/dashboard");
         localStorage.setItem("user_name", response.data.user.displayName)
+        localStorage.setItem("user_account_id", response.data.user.accountId)
       } else {
         showToast("Login failed. Please check your credentials.");
       }
