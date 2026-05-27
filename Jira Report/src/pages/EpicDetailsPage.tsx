@@ -412,10 +412,12 @@ export function EpicDetailsPage() {
             {/* Filter Bar */}
             <div className="flex flex-col lg:flex-row lg:items-end gap-3 pb-4 border-b border-slate-100">
               <div className="flex-1 relative">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">Search Issues</label>
+                <label htmlFor="issue-search" className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">Search Issues</label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
                   <input
+                    id="issue-search"
+                    name="issue-search"
                     type="text"
                     className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-9 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors duration-200 shadow-sm"
                     placeholder="Search by key, summary..."

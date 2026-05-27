@@ -19,7 +19,7 @@ export const getProjects = async () => {
 }
 
 export const getBoards = async (projectKey: string) => {
-  return await api.get(`/getBoards/${projectKey}`);
+  return await api.get(`/getBoards/${encodeURIComponent(projectKey)}`);
 }
 
 export const getBoardIssues = async (boardId: number) => {
@@ -31,7 +31,8 @@ export const getEpics = async (boardId: number) => {
 }
 
 export const getEpicDetailsPage = async (epicKey: string, refresh = false) => {
-  return await api.get(`/getepicdetailspage/${epicKey}${refresh ? "?refresh=true" : ""}`);
+  const query = refresh ? `?${new URLSearchParams({ refresh: "true" }).toString()}` : "";
+  return await api.get(`/getepicdetailspage/${encodeURIComponent(epicKey)}${query}`);
 }
 
 // Zephyr APIs
@@ -46,7 +47,8 @@ export const saveZephyrConfig = async (config: {
 }
 
 export const getZephyrTests = async (issueKey: string, projectKey?: string) => {
-  return await api.get(`/getzephyrtests/${issueKey}${projectKey ? `?projectKey=${projectKey}` : ""}`);
+  const query = projectKey ? `?${new URLSearchParams({ projectKey }).toString()}` : "";
+  return await api.get(`/getzephyrtests/${encodeURIComponent(issueKey)}${query}`);
 }
 
 export const checkZephyrIssues = async (issueKeys: string[], projectKey?: string) => {
