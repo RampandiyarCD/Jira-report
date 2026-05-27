@@ -189,7 +189,7 @@ export const getEpicDetailsController = async (req: Request, res: Response) => {
   }
 
   try {
-    const epic = await getEpicDetailsService(epicKey, jira_auth, jira_base_url);
+    const epic = await getEpicDetailsService(jira_base_url, jira_auth, epicKey);
     res.status(200).json({
       success: true,
       epic,
