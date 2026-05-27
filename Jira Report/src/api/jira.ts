@@ -26,6 +26,6 @@ export const getBoardIssues = async (boardId: number) => {
   return await api.get(`/getboardissues/${boardId}`);
 }
 
-export const getEpics = async (boardId: number) => {
-  return await api.get(`/getepics/${boardId}`);
+export const getEpics = async (boardId: number, options?: { signal?: AbortSignal }) => {
+  return await api.get(`/getepics/${boardId}`, { signal: options?.signal });
 }

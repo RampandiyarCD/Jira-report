@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getBoardService, getEpicsFromBoardService, getProjectService, loginService } from "../service/jiraService";
+import { getBoardService, getEpicDetailsService, getEpicsFromBoardService, getProjectService, loginService } from "../service/jiraService";
 
 export const loginController = async (
   req: Request,
@@ -172,6 +172,34 @@ export const getEpicsController = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch epics",
+    });
+  }
+}
+
+export const getEpicDetailsController = async (req: Request, res: Response) => {
+  const { jira_auth, jira_base_url } = req.cookies || {};
+  const { epicKey } = req.params as { epicKey: string };
+
+  if (!jira_auth || !jira_base_url) {
+    res.status(401).json({
+      success: false,
+      message: "Unauthorized",
+    });
+    return;
+  }
+
+  try {
+    const epic = await getEpicDetailsService(jira_base_url, jira_auth, epicKey);
+    res.status(200).json({
+      success: true,
+      epic,
+    });
+  } catch (error: any) {
+    console.log(error?.response?.data || error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch epic details",
     });
   }
 }

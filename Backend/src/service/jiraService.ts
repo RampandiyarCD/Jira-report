@@ -101,3 +101,14 @@ export const getEpicsFromBoardService = async (url: string, auth: string, boardI
 
   return [...epicMap.values()];
 };
+
+export const getEpicDetailsService = async (url: string, auth: string, epicKey: string) => {
+  const safeKey = encodeURIComponent(epicKey);
+  const response = await axios.get(`${url}/rest/api/3/issue/${safeKey}`, {
+    headers: {
+      Authorization: `Basic ${auth}`,
+      Accept: "application/json",
+    },
+  });
+  return response.data;
+};

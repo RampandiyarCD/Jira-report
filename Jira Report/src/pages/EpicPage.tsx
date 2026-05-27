@@ -1,7 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from "../components/Card";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getEpics } from "../api/jira";
-import toast from "react-hot-toast";
+import { useFilter } from "../context/FilterContext";
+import { Search, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2, Clock, X, RotateCw } from "lucide-react";
+import { Select } from "../components/Select";
 
 interface Epic {
   key: string;
@@ -11,105 +13,269 @@ interface Epic {
   done: boolean;
 }
 
+const STATUS_FILTER_VALUES = ["all", "completed", "inprogress"] as const;
+type StatusFilter = (typeof STATUS_FILTER_VALUES)[number];
+
 export function EpicsPage() {
   const [epics, setEpics] = useState<Epic[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [jiraStatusFilter, setJiraStatusFilter] = useState("all");
+  const [sortKey, setSortKey] = useState<keyof Epic>("key");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
-  const boardId = localStorage.getItem("selected_board_id");
+  const { selectedBoard: boardId } = useFilter();
 
-  
+  // Per-component-instance cache — cleared when the component unmounts or remounts
+  // (e.g. after logout). Keyed by boardId so switching boards never serves stale data.
+  const epicCache = useRef<Record<string, Epic[]>>({});
 
-  useEffect(() => {
-    const fetchEpics = async () => {
+  const fetchData = useCallback(
+    (force = false) => {
       if (!boardId) {
-        toast.error("Please select a board");
         setEpics([]);
         return;
       }
-      setLoading(true);
-      try {
-        const result = await getEpics(Number(boardId));
-        if (result?.data?.epics) {
-          setEpics(result.data.epics);
-        }
-        console.log(result.data.epics);
-      } catch (error) {
-        console.error("Failed to fetch epics:", error);
-        setEpics([]);
-      } finally {
-        setLoading(false);
+
+      if (!force && epicCache.current[boardId]) {
+        setEpics(epicCache.current[boardId]);
+        return;
       }
-    };
 
-    fetchEpics();
-  }, [boardId]);
+      // Cancel any in-flight request when boardId changes or a force-refresh fires.
+      const controller = new AbortController();
+      setLoading(true);
 
-  const completedCount = epics.filter((e) => e.done).length;
-  const inProgressCount = epics.filter((e) => !e.done).length;
+      getEpics(Number(boardId), { signal: controller.signal })
+        .then((res) => {
+          const data: Epic[] = res?.data?.epics ?? [];
+          epicCache.current[boardId] = data;
+          setEpics(data);
+        })
+        .catch((err) => {
+          if (err?.name === "CanceledError" || err?.name === "AbortError") return;
+          console.error(err);
+          setEpics([]);
+        })
+        .finally(() => setLoading(false));
+
+      // Return a cleanup so callers (useEffect) can cancel on re-run.
+      return () => controller.abort();
+    },
+    [boardId]
+  );
+
+  useEffect(() => {
+    const cleanup = fetchData();
+    return cleanup;
+  }, [fetchData]);
+
+  const uniqueStatuses = Array.from(new Set(epics.map((e) => e.status))).filter(Boolean);
+
+  const filtered = epics.filter((e) => {
+    const q = searchQuery.toLowerCase();
+    return (
+      (!q || [e.key, e.name, e.summary].some((v) => (v || "").toLowerCase().includes(q))) &&
+      (statusFilter === "all" || (statusFilter === "completed" ? e.done : !e.done)) &&
+      (jiraStatusFilter === "all" || e.status === jiraStatusFilter)
+    );
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    const comp = String(a[sortKey] ?? "").localeCompare(String(b[sortKey] ?? ""), undefined, { numeric: true, sensitivity: "base" });
+    return sortDirection === "asc" ? comp : -comp;
+  });
+
+  const handleSort = (key: keyof Epic) => {
+    if (sortKey === key) {
+      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDirection("asc");
+    }
+  };
+
+  const hasFilters = searchQuery || statusFilter !== "all" || jiraStatusFilter !== "all";
+  const resetFilters = () => {
+    setSearchQuery("");
+    setStatusFilter("all");
+    setJiraStatusFilter("all");
+  };
+
+  const handleStatusFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if ((STATUS_FILTER_VALUES as readonly string[]).includes(val)) {
+      setStatusFilter(val as StatusFilter);
+    }
+  };
+
+  const columns: { label: string; key: keyof Epic; ariaSortLabel?: string }[] = [
+    { label: "Key", key: "key" },
+    { label: "Epic Name", key: "name" },
+    { label: "Jira Status", key: "status" },
+    { label: "Done", key: "done" },
+  ];
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Epic Intelligence</h1>
-        <p className="text-gray-500 text-sm">Portfolio health, risk scoring, and delivery prediction</p>
-      </div>
+      <h1 className="text-2xl font-bold text-gray-900">Epic Details</h1>
 
-      {/* Summary KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-2xl font-bold text-gray-800">{epics.length}</div>
-            <div className="text-xs text-gray-500">Total Epics</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-2xl font-bold text-green-600">{completedCount}</div>
-            <div className="text-xs text-gray-500">Completed</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-2xl font-bold text-blue-600">{inProgressCount}</div>
-            <div className="text-xs text-gray-500">In Progress</div>
-          </CardContent>
-        </Card>
+        {[
+          { label: "Total Epics", val: epics.length, col: "text-gray-800" },
+          { label: "Completed", val: epics.filter((e) => e.done).length, col: "text-green-600" },
+          { label: "In Progress", val: epics.filter((e) => !e.done).length, col: "text-blue-600" },
+        ].map((c, i) => (
+          <Card key={i}>
+            <CardContent className="pt-4">
+              <div className={`text-2xl font-bold ${c.col}`}>{c.val}</div>
+              <div className="text-xs text-gray-500">{c.label}</div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
-      {/* Epic List */}
       <Card>
-        <CardHeader>
-          <CardTitle>All Epics</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <div className="flex items-center gap-2">
+            <CardTitle>All Epics</CardTitle>
+            {boardId && (
+              <button
+                onClick={() => fetchData(true)}
+                title="Refresh from Jira"
+                aria-label="Refresh epics from Jira"
+                className="text-slate-400 hover:text-blue-600 transition-colors p-1 rounded hover:bg-slate-100 cursor-pointer animate-none"
+              >
+                <RotateCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+              </button>
+            )}
+          </div>
+          {!loading && boardId && epics.length > 0 && (
+            <span className="text-xs font-semibold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">
+              Showing {filtered.length} of {epics.length}
+            </span>
+          )}
         </CardHeader>
         <CardContent>
-          {!boardId && (
+          {!boardId ? (
             <p className="text-gray-400 text-sm text-center py-8">Select a board to view epics</p>
-          )}
-          {boardId && loading && (
+          ) : loading ? (
             <p className="text-gray-400 text-sm text-center py-8">Loading epics...</p>
-          )}
-          {boardId && !loading && epics.length === 0 && (
+          ) : epics.length === 0 ? (
             <p className="text-gray-400 text-sm text-center py-8">No epics found for this board</p>
-          )}
-          {!loading && epics.length > 0 && (
-            <div className="divide-y divide-gray-100">
-              {epics.map((epic) => (
-                <div key={epic.key} className="flex items-center justify-between py-3 px-2">
-                  <div>
-                    <span className="text-xs font-mono text-gray-400 mr-2">{epic.key}</span>
-                    <span className="text-sm font-medium text-gray-800">{epic.name}</span>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex flex-col md:flex-row md:items-end gap-4 pb-4 border-b border-slate-100">
+                <div className="flex-1 relative">
+                  <label htmlFor="epic-search" className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">Search Epics</label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                    <input
+                      id="epic-search"
+                      type="text"
+                      className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-9 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors duration-200 shadow-sm"
+                      placeholder="Search by key, name, or summary..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                    {searchQuery && (
+                      <button
+                        aria-label="Clear search"
+                        onClick={() => setSearchQuery("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
-                  <span
-                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                      epic.done
-                        ? "bg-green-100 text-green-700"
-                        : "bg-blue-100 text-blue-700"
-                    }`}
-                  >
-                    {epic.status}
-                  </span>
                 </div>
-              ))}
+                <div className="w-full md:w-48">
+                  <Select name="Completion" value={statusFilter} onChange={handleStatusFilterChange}>
+                    <option value="all">All Completion</option>
+                    <option value="completed">Completed</option>
+                    <option value="inprogress">In Progress</option>
+                  </Select>
+                </div>
+                <div className="w-full md:w-48">
+                  <Select name="Jira Status" value={jiraStatusFilter} onChange={(e) => setJiraStatusFilter(e.target.value)}>
+                    <option value="all">All Statuses</option>
+                    {uniqueStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </Select>
+                </div>
+                {hasFilters && (
+                  <button onClick={resetFilters} className="flex items-center justify-center gap-1.5 px-3 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-semibold rounded-lg transition-colors cursor-pointer shadow-sm shrink-0">
+                    <X className="w-4 h-4" /> Reset
+                  </button>
+                )}
+              </div>
+
+              {filtered.length === 0 ? (
+                <div className="text-center py-12 text-slate-400">
+                  <p className="text-sm">No epics match your search and filter criteria.</p>
+                  <button onClick={resetFilters} className="mt-2 text-xs font-semibold text-blue-600 hover:text-blue-500 underline cursor-pointer">Reset all filters</button>
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border border-slate-100 shadow-sm">
+                  <table className="w-full border-collapse text-left text-sm text-slate-700">
+                    <thead className="bg-slate-50 border-b border-slate-100 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      <tr>
+                        {columns.map((col) => {
+                          const ariaSortValue: "ascending" | "descending" | "none" =
+                            sortKey === col.key
+                              ? sortDirection === "asc"
+                                ? "ascending"
+                                : "descending"
+                              : "none";
+                          return (
+                            <th key={col.key} scope="col" aria-sort={ariaSortValue} className="py-3 px-4">
+                              <button
+                                className="flex items-center gap-1.5 select-none cursor-pointer hover:text-slate-700 transition-colors w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+                                onClick={() => handleSort(col.key)}
+                                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleSort(col.key); } }}
+                              >
+                                {col.label}
+                                {sortKey === col.key ? (
+                                  sortDirection === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />
+                                ) : (
+                                  <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 opacity-50" />
+                                )}
+                              </button>
+                            </th>
+                          );
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {sorted.map((epic) => (
+                        <tr key={epic.key} className="hover:bg-slate-50/50 transition-colors group">
+                          <td className="whitespace-nowrap py-4 px-4">
+                            <span className="text-xs font-mono font-semibold text-slate-500 bg-slate-50 px-2 py-1 rounded border border-slate-100 group-hover:bg-white group-hover:border-slate-200 transition-colors">{epic.key}</span>
+                          </td>
+                          <td className="py-4 px-4 max-w-xs md:max-w-md">
+                            <div className="text-sm font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">{epic.name}</div>
+                            {epic.summary && epic.summary !== epic.name && <div className="text-xs text-slate-500 mt-0.5 line-clamp-1">{epic.summary}</div>}
+                          </td>
+                          <td className="whitespace-nowrap py-4 px-4">
+                            <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium inline-block ring-1 ${
+                              epic.done ? "bg-green-50 text-green-700 ring-green-600/20" :
+                              epic.status.toLowerCase().includes("progress") || epic.status.toLowerCase().includes("dev") ? "bg-blue-50 text-blue-700 ring-blue-600/20" :
+                              "bg-slate-50 text-slate-600 ring-slate-500/10"
+                            }`}>{epic.status}</span>
+                          </td>
+                          <td className="whitespace-nowrap py-4 px-4 text-slate-500">
+                            {epic.done ? (
+                              <div className="flex items-center gap-1 text-green-600"><CheckCircle2 className="w-4 h-4" /><span className="text-xs font-medium">Done</span></div>
+                            ) : (
+                              <div className="flex items-center gap-1 text-blue-500"><Clock className="w-4 h-4 animate-pulse" /><span className="text-xs font-medium">In Progress</span></div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
         </CardContent>

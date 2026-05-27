@@ -5,6 +5,7 @@ import { EpicsPage } from "./pages/EpicPage"
 import { SettingsPage } from "./pages/Settings"
 import { Sidebar } from "./components/Sidebar"
 import { GlobalFilters } from "./components/GlobalFilter"
+import { FilterProvider } from "./context/FilterContext"
 
 const AppLayout = () => {
   return (
@@ -22,7 +23,7 @@ const AppLayout = () => {
 
 function App() {
   return (
-    <div>
+    <FilterProvider>
       <Routes>
         <Route path="/" element={<Login />} />
         <Route element={<AppLayout />}>
@@ -31,7 +32,7 @@ function App() {
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Routes>
-    </div>
+    </FilterProvider>
   )
 }
 
