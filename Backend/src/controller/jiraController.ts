@@ -45,7 +45,6 @@ export const loginController = async (req: Request, res: Response): Promise<void
     res.status(401).json({
       success: false,
       message: "Invalid Jira credentials",
-      debug: { status, jiraError: jiraError || error.message },
     });
   }
 };
