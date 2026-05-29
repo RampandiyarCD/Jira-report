@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/Card";
 import { useFilter } from "../context/FilterContext";
@@ -73,10 +73,10 @@ export default function ZephyrPage() {
   const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({});
   const [lastUpdated, setLastUpdated] = useState<string>("");
 
-  const fetchData = (force = false) => {
+  const fetchData = useCallback((force = false) => {
     if (!issueKey) return;
 
-    // Check cache first
+    // Check cache first (skip cache when selectedProject changes to avoid stale results)
     if (!force && zephyrCache[issueKey]) {
       const cached = zephyrCache[issueKey];
       setTestCases(cached.testCases);
@@ -114,12 +114,11 @@ export default function ZephyrPage() {
         setError(err?.response?.data?.message || "Failed to retrieve Zephyr test details. Make sure Zephyr is configured in settings.");
       })
       .finally(() => setLoading(false));
-  };
+  }, [issueKey, selectedProject]);
 
   useEffect(() => {
     fetchData(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [issueKey]);
+  }, [fetchData]);
 
   const toggleExpand = (caseKey: string) => {
     setExpandedKeys((prev) => ({ ...prev, [caseKey]: !prev[caseKey] }));
@@ -268,7 +267,10 @@ export default function ZephyrPage() {
           <CardTitle className="text-base font-bold text-slate-800">Linked Test Cases</CardTitle>
           <div className="relative w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+            <label htmlFor="zephyr-search" className="sr-only">Search test cases</label>
             <input
+              id="zephyr-search"
+              name="zephyr-search"
               type="text"
               placeholder="Search test cases..."
               value={searchQuery}

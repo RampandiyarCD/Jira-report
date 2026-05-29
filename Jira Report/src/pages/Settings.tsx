@@ -10,8 +10,10 @@ export function SettingsPage() {
   const { selectedProject } = useFilter();
 
   // Zephyr states
-  const [zephyrAccessKey, setZephyrAccessKey] = useState(() => localStorage.getItem("zephyr_access_key") || "")
-  const [zephyrSecretKey, setZephyrSecretKey] = useState(() => localStorage.getItem("zephyr_secret_key") || "")
+  // Credentials are NOT read from localStorage for security — they are stored server-side after saving.
+  // Users must re-enter keys only when they want to update the configuration.
+  const [zephyrAccessKey, setZephyrAccessKey] = useState("")
+  const [zephyrSecretKey, setZephyrSecretKey] = useState("")
   
   const [zephyrAccountId, setZephyrAccountId] = useState(() => {
     return localStorage.getItem("zephyr_account_id") || localStorage.getItem("user_account_id") || "";
@@ -26,6 +28,12 @@ export function SettingsPage() {
   })
   const [zephyrSaving, setZephyrSaving] = useState(false)
   const [zephyrStatus, setZephyrStatus] = useState<{ type: "success" | "error"; message: string } | null>(null)
+
+  // Scrub any credentials that may have been stored by an older version of the app
+  useEffect(() => {
+    localStorage.removeItem("zephyr_access_key");
+    localStorage.removeItem("zephyr_secret_key");
+  }, []);
 
   // Auto-populate Account ID if it becomes available in localStorage
   useEffect(() => {
@@ -61,10 +69,8 @@ export function SettingsPage() {
         zephyrProjectKey,
       })
 
-      // Store in localStorage
+      // Only persist non-secret preferences locally; credentials are stored server-side.
       localStorage.setItem("zephyr_product_type", "zephyr-squad")
-      localStorage.setItem("zephyr_access_key", zephyrAccessKey)
-      localStorage.setItem("zephyr_secret_key", zephyrSecretKey)
       localStorage.setItem("zephyr_account_id", zephyrAccountId)
       localStorage.setItem("zephyr_base_url", zephyrBaseUrl)
       localStorage.setItem("zephyr_project_key", zephyrProjectKey)
@@ -142,6 +148,10 @@ export function SettingsPage() {
               onChange={(e) => setZephyrProjectKey(e.target.value)}
             />
           </div>
+
+          <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg">
+            <strong>Security note:</strong> Access Key and Secret Key are sent directly to the server and never stored in the browser. Re-enter them only when updating your configuration.
+          </p>
 
           {zephyrStatus && (
             <div className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg ${

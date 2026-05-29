@@ -1,7 +1,9 @@
 import axios from "axios";
 import { Epic, Project } from "../interface/interface";
+import logger from "../utils/logger";
 
 export const loginService = async (email: string, url: string, token: string) => {
+  logger.info("loginService: authenticating", { email, url });
   const auth = Buffer.from(`${email}:${token}`).toString("base64");
   const response = await axios.get(`${url}/rest/api/3/myself`, {
     headers: {
@@ -9,23 +11,28 @@ export const loginService = async (email: string, url: string, token: string) =>
       Accept: "application/json",
     },
   });
+  logger.info("loginService: success", { accountId: response.data.accountId });
   return { user: response.data, auth };
 };
 
 export const getProjectService = async (url: string, auth: string) => {
+  logger.info("getProjectService: fetching projects");
   const { data } = await axios.get(`${url}/rest/api/3/project/search`, {
     headers: {
       Authorization: `Basic ${auth}`,
       Accept: "application/json",
     },
   });
-  return (data.values || []).map((project: Project) => ({
+  const projects = (data.values || []).map((project: Project) => ({
     name: project.name,
     key: project.key,
   }));
+  logger.info("getProjectService: success", { count: projects.length });
+  return projects;
 };
 
 export const getBoardService = async (url: string, auth: string, project: string) => {
+  logger.info("getBoardService: fetching boards", { project });
   const { data } = await axios.get(`${url}/rest/agile/1.0/board`, {
     params: { projectKeyOrId: project },
     headers: {
@@ -33,15 +40,18 @@ export const getBoardService = async (url: string, auth: string, project: string
       Accept: "application/json",
     },
   });
-  return (data.values || []).map((boards: any) => ({
+  const boards = (data.values || []).map((boards: any) => ({
     name: boards.name,
     id: boards.id,
     projectKey: boards.location?.projectKey,
     type: boards.type,
   }));
+  logger.info("getBoardService: success", { count: boards.length });
+  return boards;
 };
 
 export const getBoardIssuesService = async (url: string, auth: string, boardId: string) => {
+  logger.info("getBoardIssuesService: fetching issues", { boardId });
   const headers = { Authorization: `Basic ${auth}`, Accept: "application/json" };
   const baseUrl = `${url}/rest/agile/1.0/board/${boardId}/issue`;
   
@@ -58,10 +68,12 @@ export const getBoardIssuesService = async (url: string, auth: string, boardId: 
   for (const r of responses) {
     issues.push(...(r.data.issues || []));
   }
+  logger.info("getBoardIssuesService: success", { boardId, total: issues.length });
   return issues;
 };
 
 export const getEpicsFromBoardService = async (url: string, auth: string, boardId: string) => {
+  logger.info("getEpicsFromBoardService: start", { boardId });
   const allIssues = await getBoardIssuesService(url, auth, boardId);
   const headers = { Authorization: `Basic ${auth}`, Accept: "application/json" };
 
@@ -90,6 +102,8 @@ export const getEpicsFromBoardService = async (url: string, auth: string, boardI
     }
   }
 
+  logger.info("getEpicsFromBoardService: resolved epic keys", { boardId, epicCount: epicKeys.size });
+
   const epicPromises = [...epicKeys].map(async (k): Promise<Epic> => {
     try {
       const { data } = await axios.get(`${url}/rest/api/3/issue/${k}`, {
@@ -111,7 +125,8 @@ export const getEpicsFromBoardService = async (url: string, auth: string, boardI
         creator: f.creator?.displayName ?? "Unknown",
         creatorAvatar: f.creator?.avatarUrls?.["24x24"] ?? "",
       };
-    } catch {
+    } catch (err: any) {
+      logger.warn("getEpicsFromBoardService: failed to fetch epic details, using fallback", { epicKey: k, error: err?.message });
       return {
         key: k,
         name: k,
@@ -124,10 +139,13 @@ export const getEpicsFromBoardService = async (url: string, auth: string, boardI
     }
   });
 
-  return Promise.all(epicPromises);
+  const result = await Promise.all(epicPromises);
+  logger.info("getEpicsFromBoardService: success", { boardId, epicCount: result.length });
+  return result;
 };
 
 export const getEpicDetailsPageService = async (url: string, auth: string, epicKey: string) => {
+  logger.info("getEpicDetailsPageService: start", { epicKey });
   const headers = { Authorization: `Basic ${auth}`, Accept: "application/json" };
   const jql = `"epic link" = "${epicKey}" OR "parent" = "${epicKey}" OR "Epic Link" = "${epicKey}"`;
 
@@ -149,6 +167,8 @@ export const getEpicDetailsPageService = async (url: string, auth: string, epicK
 
   const epicData = epicRes.data;
   const searchData = searchRes.data;
+
+  logger.info("getEpicDetailsPageService: fetched issues", { epicKey, issueCount: (searchData.issues || []).length });
 
   const issues = (searchData.issues || []).map((issue: any) => {
     const f = issue.fields;
@@ -200,6 +220,8 @@ export const getEpicDetailsPageService = async (url: string, auth: string, epicK
   
   const isEpicDone = epicData.fields.status?.statusCategory?.key === "done";
   const progress = total > 0 ? Math.round((done / total) * 100) : (isEpicDone ? 100 : 0);
+
+  logger.info("getEpicDetailsPageService: success", { epicKey, childIssues: total, done, progress });
 
   return {
     epic: {
