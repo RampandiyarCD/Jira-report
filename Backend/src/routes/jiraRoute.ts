@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   getBoardController,
   getDefectAnalyticsController,
+  getDashboardController,
   getEpicDetailsPageController,
   getEpicsController,
   getIssueController,
@@ -23,6 +24,7 @@ jiraRouter.get("/getepics/:boardId", getEpicsController);
 jiraRouter.get("/getepicdetailspage/:epicKey", getEpicDetailsPageController);
 jiraRouter.get("/defect-analytics/:boardId", getDefectAnalyticsController);
 jiraRouter.get("/issue/:issueKey", getIssueController);
+jiraRouter.get("/dashboard/:boardId", getDashboardController);
 
 // Zephyr routes
 jiraRouter.post("/savezephyrconfig", saveZephyrConfigController);

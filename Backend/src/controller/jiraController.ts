@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getBoardService, getDefectAnalyticsService, getEpicDetailsPageService, getEpicsFromBoardService, getIssueService, getProjectService, loginService } from "../service/jiraService";
+import { getBoardService,getDashboardDataService, getDefectAnalyticsService, getEpicDetailsPageService, getEpicsFromBoardService, getIssueService, getProjectService, loginService } from "../service/jiraService";
 import { getZephyrDetailsForIssueService, checkIssuesHaveTestsService } from "../service/zephyrService";
 import logger from "../utils/logger";
 
@@ -11,7 +11,11 @@ export const loginController = async (req: Request, res: Response): Promise<void
     return;
   }
 
-  const cleanUrl = url.replace(/\/$/, "");
+  let cleanUrl = url.trim().replace(/\/$/, "");
+  if (!/^https?:\/\//i.test(cleanUrl)) {
+    cleanUrl = `https://${cleanUrl}`;
+  }
+  logger.info(`Login attempt: email=${email}, url=${cleanUrl}`);
 
   try {
     const { user, auth } = await loginService(email, cleanUrl, token);
@@ -35,8 +39,13 @@ export const loginController = async (req: Request, res: Response): Promise<void
       },
     });
   } catch (error: any) {
-    logger.error("Login Error:", error?.response?.data || error.message || error);
-    res.status(401).json({ success: false, message: "Invalid Jira credentials" });
+    const jiraError = error?.response?.data;
+    const status = error?.response?.status;
+    logger.error("Login Error:", { status, jiraError, message: error.message });
+    res.status(401).json({
+      success: false,
+      message: "Invalid Jira credentials",
+    });
   }
 };
 
@@ -63,8 +72,10 @@ export const getProjectController = async (req: Request, res: Response): Promise
     const projects = await getProjectService(jira_base_url, jira_auth);
     res.status(200).json({ success: true, projects });
   } catch (error: any) {
-    logger.error("Get Projects Error:", error?.response?.data || error.message || error);
-    res.status(500).json({ success: false, message: "Failed to fetch projects" });
+    const status = error?.response?.status ?? 500;
+    const message = error?.response?.data?.errorMessages?.[0] ?? error?.response?.data?.message ?? error.message ?? "Failed to fetch projects";
+    logger.error("Get Projects Error:", { status, message });
+    res.status(status).json({ success: false, message });
   }
 };
 
@@ -81,8 +92,10 @@ export const getBoardController = async (req: Request, res: Response): Promise<v
     const boards = await getBoardService(jira_base_url, jira_auth, projectKey);
     res.status(200).json({ success: true, boards });
   } catch (error: any) {
-    logger.error("Get Boards Error:", error?.response?.data || error.message || error);
-    res.status(500).json({ success: false, message: "Failed to fetch boards" });
+    const status = error?.response?.status ?? 500;
+    const message = error?.response?.data?.errorMessages?.[0] ?? error?.response?.data?.message ?? error.message ?? "Failed to fetch boards";
+    logger.error("Get Boards Error:", { status, message });
+    res.status(status).json({ success: false, message });
   }
 };
 
@@ -99,8 +112,10 @@ export const getEpicsController = async (req: Request, res: Response) => {
     const epics = await getEpicsFromBoardService(jira_base_url, jira_auth, boardId);
     res.status(200).json({ success: true, epics });
   } catch (error: any) {
-    logger.error("Get Epics Error:", error?.response?.data || error.message || error);
-    res.status(500).json({ success: false, message: "Failed to fetch epics" });
+    const status = error?.response?.status ?? 500;
+    const message = error?.response?.data?.errorMessages?.[0] ?? error?.response?.data?.message ?? error.message ?? "Failed to fetch epics";
+    logger.error("Get Epics Error:", { status, message });
+    res.status(status).json({ success: false, message });
   }
 };
 
@@ -119,6 +134,31 @@ export const getEpicDetailsPageController = async (req: Request, res: Response) 
   } catch (error: any) {
     logger.error("Get Epic Details Page Error:", error?.response?.data || error.message || error);
     res.status(500).json({ success: false, message: "Failed to fetch epic details" });
+  }
+};
+
+// ─── Dashboard Controller ───────────────────────────────────────────────────
+
+export const getDashboardController = async (req: Request, res: Response): Promise<void> => {
+  const { jira_auth, jira_base_url } = req.cookies || {};
+  const boardId = req.params.boardId as string;
+
+  if (!jira_auth || !jira_base_url) {
+    res.status(401).json({ success: false, message: "Unauthorized" });
+    return;
+  }
+
+  try {
+    const data = await getDashboardDataService(jira_base_url, jira_auth, boardId);
+    res.status(200).json({ success: true, ...data });
+  } catch (error: any) {
+    logger.error("Get Dashboard Error:", {
+      status: error?.response?.status,
+      data: error?.response?.data,
+      code: error?.code,
+      message: error?.message,
+    });
+    res.status(500).json({ success: false, message: error?.response?.data?.errorMessages?.[0] ?? "Failed to fetch dashboard data" });
   }
 };
 

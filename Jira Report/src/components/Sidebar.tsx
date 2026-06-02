@@ -3,7 +3,6 @@ import {
   ChevronLeft,
   ChevronRight,
   GitCompare,
-  Layers,
   LayoutDashboard,
   LogOut,
   Map,
@@ -19,11 +18,10 @@ import { logoutApi } from "../api/jira";
 import { useFilter } from "../context/FilterContext";
 
 const navItems = [
-  { to: "/dashboard", label: "Dashboard",        icon: LayoutDashboard, exact: true },
-  { to: "/board",    label: "Board Overview",    icon: Layers },
-  { to: "/sprints",  label: "Sprint Analytics",  icon: Zap },
-  { to: "/compare",  label: "Sprint Compare",    icon: GitCompare },
-  { to: "/epics",    label: "Epic Intelligence", icon: Map },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
+  { to: "/sprints", label: "Sprint Analytics", icon: Zap },
+  { to: "/compare", label: "Sprint Compare", icon: GitCompare },
+  { to: "/epics", label: "Epic Intelligence", icon: Map },
   { to: "/defects",  label: "Defect Analytics",  icon: Bug },
 ];
 
