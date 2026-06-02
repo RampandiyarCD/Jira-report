@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getBoardService, getEpicDetailsPageService, getEpicsFromBoardService, getProjectService, loginService } from "../service/jiraService";
+import { getBoardService, getDefectAnalyticsService, getEpicDetailsPageService, getEpicsFromBoardService, getIssueService, getProjectService, loginService } from "../service/jiraService";
 import { getZephyrDetailsForIssueService, checkIssuesHaveTestsService } from "../service/zephyrService";
 import logger from "../utils/logger";
 
@@ -215,5 +215,49 @@ export const checkZephyrIssuesController = async (req: Request, res: Response) =
   } catch (error: any) {
     logger.error("Check Zephyr Issues Error:", error?.response?.data || error.message || error);
     res.status(200).json({ success: true, issuesWithTests: [] });
+  }
+};
+
+// ─── Defect Analytics Controller ─────────────────────────────────────────────
+
+export const getDefectAnalyticsController = async (req: Request, res: Response): Promise<void> => {
+  const { jira_auth, jira_base_url } = req.cookies || {};
+  const boardId = req.params.boardId as string;
+
+  if (!jira_auth || !jira_base_url) {
+    res.status(401).json({ success: false, message: "Unauthorized" });
+    return;
+  }
+
+  try {
+    const data = await getDefectAnalyticsService(jira_base_url, jira_auth, boardId);
+    res.status(200).json({ success: true, ...data });
+  } catch (error: any) {
+    const status = error?.response?.status ?? 500;
+    const message = error?.response?.data?.errorMessages?.[0] ?? error?.response?.data?.message ?? error.message ?? "Failed to fetch defect analytics";
+    logger.error("Get Defect Analytics Error:", { status, message });
+    res.status(status).json({ success: false, message });
+  }
+};
+
+// ─── Issue Detail Controller ──────────────────────────────────────────────────
+
+export const getIssueController = async (req: Request, res: Response): Promise<void> => {
+  const { jira_auth, jira_base_url } = req.cookies || {};
+  const issueKey = req.params.issueKey as string;
+
+  if (!jira_auth || !jira_base_url) {
+    res.status(401).json({ success: false, message: "Unauthorized" });
+    return;
+  }
+
+  try {
+    const data = await getIssueService(jira_base_url, jira_auth, issueKey);
+    res.status(200).json({ success: true, ...data });
+  } catch (error: any) {
+    const status = error?.response?.status ?? 500;
+    const message = error?.response?.data?.errorMessages?.[0] ?? error?.response?.data?.message ?? error.message ?? "Failed to fetch issue";
+    logger.error("Get Issue Error:", { status, message, issueKey });
+    res.status(status).json({ success: false, message });
   }
 };

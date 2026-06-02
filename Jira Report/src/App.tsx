@@ -10,6 +10,8 @@ const Dashboard = lazy(() => import("./pages/Dashboard").then((m) => ({ default:
 const EpicsPage = lazy(() => import("./pages/EpicPage").then((m) => ({ default: m.EpicsPage })))
 const EpicDetailsPage = lazy(() => import("./pages/EpicDetailsPage").then((m) => ({ default: m.EpicDetailsPage })))
 const SettingsPage = lazy(() => import("./pages/Settings").then((m) => ({ default: m.SettingsPage })))
+const DefectAnalyticsPage = lazy(() => import("./pages/DefectAnalyticsPage").then((m) => ({ default: m.DefectAnalyticsPage })))
+const BugDetailPage = lazy(() => import("./pages/BugDetailPage").then((m) => ({ default: m.BugDetailPage })))
 
 // Lazy load route pages (Default export)
 const ZephyrPage = lazy(() => import("./pages/ZephyrPage"))
@@ -44,6 +46,8 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/epics" element={<EpicsPage />} />
             <Route path="/epics/:epicKey" element={<EpicDetailsPage />} />
+            <Route path="/defects" element={<DefectAnalyticsPage />} />
+            <Route path="/defects/:issueKey" element={<BugDetailPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/zephyr/:issueKey" element={<ZephyrPage />} />
           </Route>

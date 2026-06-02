@@ -43,6 +43,7 @@ export const Login = () => {
         navigate("/dashboard");
         localStorage.setItem("user_name", response.data.user.displayName)
         localStorage.setItem("user_account_id", response.data.user.accountId)
+        localStorage.setItem("jira_base_url", url.replace(/\/$/, ""))
       } else {
         showToast("Login failed. Please check your credentials.");
       }
