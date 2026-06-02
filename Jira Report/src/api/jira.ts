@@ -54,3 +54,21 @@ export const getZephyrTests = async (issueKey: string, projectKey?: string) => {
 export const checkZephyrIssues = async (issueKeys: string[], projectKey?: string) => {
   return await api.post("/checkzephyrissues", { issueKeys, projectKey });
 }
+
+// ─── Dashboard ───────────────────────────────────────────────────────────────
+
+export interface DashboardData {
+  total: number;
+  todo: number;
+  inProgress: number;
+  done: number;
+  openCount: number;
+  statusChart: { name: string; count: number; category: string }[];
+  statusTableData: { status: string; category: string; count: number; pct: number }[];
+  issueTypeData: { name: string; count: number }[];
+  priorityData: { name: string; count: number }[];
+}
+
+export const getDashboard = async (boardId: number): Promise<{ data: DashboardData & { success: boolean } }> => {
+  return await api.get(`/dashboard/${boardId}`);
+}

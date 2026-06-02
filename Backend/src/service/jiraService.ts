@@ -236,3 +236,195 @@ export const getEpicDetailsPageService = async (url: string, auth: string, epicK
     issues,
   };
 };
+
+// ─── Dashboard ───────────────────────────────────────────────────────────────
+
+type DashboardResult = {
+  total: number; todo: number; inProgress: number; done: number; openCount: number;
+  statusChart: { name: string; count: number; category: string }[];
+  statusTableData: { status: string; category: string; count: number; pct: number }[];
+  issueTypeData: { name: string; count: number }[];
+  priorityData: { name: string; count: number }[];
+};
+
+const _dashboardCache = new Map<string, { data: DashboardResult; expiresAt: number }>();
+const CACHE_TTL = 5 * 60 * 1000;
+
+const EMPTY_RESULT: DashboardResult = {
+  total: 0, todo: 0, inProgress: 0, done: 0, openCount: 0,
+  statusChart: [], statusTableData: [], issueTypeData: [], priorityData: [],
+};
+
+export const getDashboardDataService = async (url: string, auth: string, boardId: string): Promise<DashboardResult> => {
+  const cached = _dashboardCache.get(boardId);
+  if (cached && cached.expiresAt > Date.now()) return cached.data;
+
+  const headers = { Authorization: `Basic ${auth}`, Accept: "application/json" };
+  const boardIssueUrl = `${url}/rest/agile/1.0/board/${boardId}/issue`;
+  const searchUrl = `${url}/rest/api/3/search/jql`;
+  const escape = (s: string) => s.replace(/"/g, '\\"');
+
+
+  const [firstPageRes, boardStatusesRes, configRes, boardInfoRes, prioritiesRes] = await Promise.allSettled([
+    axios.get(boardIssueUrl, { params: { startAt: 0, maxResults: 100, fields: "status,priority,issuetype" }, headers }),
+    axios.get(`${url}/rest/agile/1.0/board/${boardId}/statuses`, { headers }),
+    axios.get(`${url}/rest/agile/1.0/board/${boardId}/configuration`, { headers }),
+    axios.get(`${url}/rest/agile/1.0/board/${boardId}`, { headers }),
+    axios.get(`${url}/rest/api/3/priority`, { headers }),
+  ]);
+
+  if (firstPageRes.status === "rejected") return EMPTY_RESULT;
+
+  const boardTotal: number = firstPageRes.value.data.total ?? 0;
+  const sampleIssues: any[] = firstPageRes.value.data.issues ?? [];
+  if (boardTotal === 0) return EMPTY_RESULT;
+
+  const filterId: string | null =
+    configRes.status === "fulfilled" && configRes.value.data?.filter?.id
+      ? String(configRes.value.data.filter.id)
+      : null;
+
+  const projectKey: string | null =
+    boardInfoRes.status === "fulfilled"
+      ? boardInfoRes.value.data?.location?.projectKey ?? null
+      : null;
+
+  const statusCategoryMap = new Map<string, string>(); // status name → category name
+  if (boardStatusesRes.status === "fulfilled") {
+    for (const group of (boardStatusesRes.value.data ?? [])) {
+      for (const s of (group.statuses ?? [])) {
+        if (s.name) statusCategoryMap.set(s.name, s.statusCategory?.name ?? "To Do");
+      }
+    }
+  }
+  for (const issue of sampleIssues) {
+    const f = issue.fields ?? {};
+    if (f.status?.name && !statusCategoryMap.has(f.status.name))
+      statusCategoryMap.set(f.status.name, f.status.statusCategory?.name ?? "To Do");
+  }
+
+  let typeNames: string[] = [...new Set<string>(
+    sampleIssues.map((i: any) => i.fields?.issuetype?.name).filter(Boolean)
+  )];
+  if (projectKey) {
+    try {
+      const { data: projectStatuses } = await axios.get(
+        `${url}/rest/api/3/project/${projectKey}/statuses`, { headers }
+      );
+      const projectTypes = (projectStatuses ?? []).map((t: any) => t.name).filter(Boolean) as string[];
+      if (projectTypes.length > 0)
+        typeNames = [...new Set([...projectTypes, ...typeNames])];
+    } catch { /* keep sample-based list */ }
+  }
+  let priorityNames: string[] = [...new Set<string>(
+    sampleIssues.map((i: any) => i.fields?.priority?.name).filter(Boolean)
+  )];
+  if (prioritiesRes.status === "fulfilled") {
+    const allPriorities = (prioritiesRes.value.data ?? []).map((p: any) => p.name).filter(Boolean) as string[];
+    if (allPriorities.length > 0)
+      priorityNames = [...new Set([...allPriorities, ...priorityNames])];
+  }
+
+  let filterTotal = 0;
+  let todo = 0, inProgress = 0, done = 0;
+  let statusCounts: { name: string; count: number; category: string }[] = [];
+  let typeCounts: { name: string; count: number }[] = [];
+  let priorityCounts: { name: string; count: number }[] = [];
+  let gotFilterCounts = false;
+
+  if (filterId) {
+    try {
+      const jql = `filter = ${filterId}`;
+      const qc = (q: string) =>
+        axios.get(searchUrl, { params: { jql: q, maxResults: 0 }, headers })
+          .then((r) => (r.data.total ?? 0) as number)
+          .catch(() => 0);
+
+      const [ft, td, ip, dn] = await Promise.all([
+        qc(jql),
+        qc(`${jql} AND statusCategory = "To Do"`),
+        qc(`${jql} AND statusCategory = "In Progress"`),
+        qc(`${jql} AND statusCategory = "Done"`),
+      ]);
+
+      const [sRes, tRes, pRes] = await Promise.all([
+        Promise.all([...statusCategoryMap.keys()].slice(0, 20).map(async (name) => ({
+          name, category: statusCategoryMap.get(name)!,
+          count: await qc(`${jql} AND status = "${escape(name)}"`),
+        }))),
+        Promise.all(typeNames.slice(0, 20).map(async (name) => ({
+          name, count: await qc(`${jql} AND issuetype = "${escape(name)}"`),
+        }))),
+        Promise.all(priorityNames.slice(0, 10).map(async (name) => ({
+          name, count: await qc(`${jql} AND priority = "${escape(name)}"`),
+        }))),
+      ]);
+
+      filterTotal = ft; todo = td; inProgress = ip; done = dn;
+      statusCounts = sRes; typeCounts = tRes; priorityCounts = pRes;
+      gotFilterCounts = filterTotal > 0;
+    } catch { /* fall through to board-api jql */ }
+  }
+
+  if (!gotFilterCounts) {
+
+    const bq = (jql: string) =>
+      axios.get(boardIssueUrl, { params: { jql, maxResults: 0 }, headers })
+        .then((r) => (r.data.total ?? 0) as number)
+        .catch(() => 0);
+
+    [todo, inProgress, done] = await Promise.all([
+      bq('statusCategory = "To Do"'),
+      bq('statusCategory = "In Progress"'),
+      bq('statusCategory = "Done"'),
+    ]);
+    filterTotal = todo + inProgress + done || boardTotal;
+
+    const [sRes, tRes, pRes] = await Promise.all([
+      Promise.all([...statusCategoryMap.keys()].slice(0, 20).map(async (name) => ({
+        name, category: statusCategoryMap.get(name)!,
+        count: await bq(`status = "${escape(name)}"`),
+      }))),
+      Promise.all(typeNames.slice(0, 20).map(async (name) => ({
+        name, count: await bq(`issuetype = "${escape(name)}"`),
+      }))),
+      Promise.all(priorityNames.slice(0, 10).map(async (name) => ({
+        name, count: await bq(`priority = "${escape(name)}"`),
+      }))),
+    ]);
+    statusCounts = sRes; typeCounts = tRes; priorityCounts = pRes;
+  }
+
+ 
+  const scale = filterTotal > 0 ? boardTotal / filterTotal : 1;
+  const scaledTodo = Math.round(todo * scale);
+  const scaledIP   = Math.round(inProgress * scale);
+  const scaledDone = boardTotal - scaledTodo - scaledIP; // ensure exact sum
+
+  const statusTableData = statusCounts
+    .map((r) => ({ status: r.name, category: r.category, count: Math.round(r.count * scale) }))
+    .filter((r) => r.count > 0)
+    .map((r) => ({ ...r, pct: Math.round((r.count / boardTotal) * 100) }))
+    .sort((a, b) => b.count - a.count);
+
+  const result: DashboardResult = {
+    total: boardTotal,
+    todo: scaledTodo,
+    inProgress: scaledIP,
+    done: scaledDone,
+    openCount: boardTotal - scaledDone,
+    statusChart: statusTableData.slice(0, 12).map(({ status, count, category }) => ({ name: status, count, category })),
+    statusTableData,
+    issueTypeData: typeCounts
+      .map((r) => ({ name: r.name, count: Math.round(r.count * scale) }))
+      .filter((r) => r.count > 0)
+      .sort((a, b) => b.count - a.count),
+    priorityData: priorityCounts
+      .map((r) => ({ name: r.name, count: Math.round(r.count * scale) }))
+      .filter((r) => r.count > 0)
+      .sort((a, b) => b.count - a.count),
+  };
+
+  _dashboardCache.set(boardId, { data: result, expiresAt: Date.now() + CACHE_TTL });
+  return result;
+};
