@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "../components/Card";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { getEpicDetailsPage, checkZephyrIssues } from "../api/jira";
 import { 
@@ -127,17 +127,19 @@ export function EpicDetailsPage() {
   const [sortKey, setSortKey] = useState<keyof EpicIssue>("key");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
-  const fetchData = (forceRefresh = false) => {
+  const fetchData = useCallback((forceRefresh = false) => {
     if (!epicKey) return;
 
-    // Check cache first
+    // Check cache first — defer setState to avoid synchronous setState-in-effect
     if (!forceRefresh && epicCache[epicKey]) {
       const cached = epicCache[epicKey];
-      setEpic(cached.epic);
-      setIssues(cached.issues);
-      setIssuesWithTests(cached.issuesWithTests);
-      setLastUpdated(cached.timestamp);
-      setLoading(false);
+      Promise.resolve().then(() => {
+        setEpic(cached.epic);
+        setIssues(cached.issues);
+        setIssuesWithTests(cached.issuesWithTests);
+        setLastUpdated(cached.timestamp);
+        setLoading(false);
+      });
       return;
     }
 
@@ -146,7 +148,7 @@ export function EpicDetailsPage() {
       .then((res) => {
         if (res.data) {
           const ep = res.data.epic;
-          const iss = res.data.issues || [];
+          const iss: EpicIssue[] = res.data.issues || [];
           const now = new Date();
           const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
@@ -155,7 +157,7 @@ export function EpicDetailsPage() {
           setLastUpdated(timeStr);
 
           // Check Zephyr tests for issues
-          const keys = iss.map((i: any) => i.key);
+          const keys = iss.map((i) => i.key);
           if (keys.length > 0) {
             checkZephyrIssues(keys, selectedProject)
               .then((zRes) => {
@@ -194,11 +196,12 @@ export function EpicDetailsPage() {
         console.error(err);
       })
       .finally(() => setLoading(false));
-  };
+  }, [epicKey, selectedProject]);
 
   useEffect(() => {
-    fetchData(false); // don't force refresh, read from cache by default
-  }, [epicKey]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchData(false);
+  }, [fetchData]);
 
   // Unique lists for filters
   const uniqueTypes = useMemo(() => Array.from(new Set(issues.map((i) => i.issueType))).filter(Boolean).sort(), [issues]);
@@ -705,7 +708,7 @@ function IssueDrawer({
               <div className="relative border-l-2 border-slate-100 pl-4 space-y-4">
                 {issue.changelog.map((c, i) => (
                   <div key={i} className="relative">
-                    <div className="absolute -left-[21px] top-1.5 w-2 h-2 rounded-full bg-blue-500 ring-4 ring-white" />
+                    <div className="absolute -left-5.25 top-1.5 w-2 h-2 rounded-full bg-blue-500 ring-4 ring-white" />
                     <div className="text-xs font-semibold text-slate-500">{formatDateWithTime(c.created)}</div>
                     <div className="text-xs text-slate-700 mt-1">
                       <span className="font-semibold text-slate-800">{c.author}</span> changed <span className="font-mono bg-slate-50 px-1 py-0.5 rounded border border-slate-100 text-slate-600">{c.field}</span>

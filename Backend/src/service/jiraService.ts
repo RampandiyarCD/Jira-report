@@ -2,6 +2,8 @@ import axios from "axios";
 import { Epic, Project } from "../interface/interface";
 import logger from "../utils/logger";
 
+const _epicsCache = new Map<string, { data: Epic[]; expiresAt: number }>();
+
 export const loginService = async (email: string, url: string, token: string) => {
   logger.info("loginService: authenticating", { email, url });
   const auth = Buffer.from(`${email}:${token}`).toString("base64");
@@ -54,16 +56,16 @@ export const getBoardIssuesService = async (url: string, auth: string, boardId: 
   logger.info("getBoardIssuesService: fetching issues", { boardId });
   const headers = { Authorization: `Basic ${auth}`, Accept: "application/json" };
   const baseUrl = `${url}/rest/agile/1.0/board/${boardId}/issue`;
-  
+
   const { data: first } = await axios.get(baseUrl, { params: { startAt: 0, maxResults: 50 }, headers });
   const total = first.total || 0;
   const issues = [...(first.issues || [])];
-  
+
   const promises = [];
   for (let startAt = 50; startAt < total; startAt += 50) {
     promises.push(axios.get(baseUrl, { params: { startAt, maxResults: 50 }, headers }));
   }
-  
+
   const responses = await Promise.all(promises);
   for (const r of responses) {
     issues.push(...(r.data.issues || []));
@@ -74,46 +76,140 @@ export const getBoardIssuesService = async (url: string, auth: string, boardId: 
 
 export const getEpicsFromBoardService = async (url: string, auth: string, boardId: string) => {
   logger.info("getEpicsFromBoardService: start", { boardId });
-  const allIssues = await getBoardIssuesService(url, auth, boardId);
+  const cached = _epicsCache.get(boardId);
+  if (cached && cached.expiresAt > Date.now()) {
+    logger.info("getEpicsFromBoardService: cache hit", { boardId });
+    return cached.data;
+  }
+
   const headers = { Authorization: `Basic ${auth}`, Accept: "application/json" };
+  const epicUrl = `${url}/rest/agile/1.0/board/${boardId}/epic`;
 
   const epicKeys = new Set<string>();
-  const stats: Record<string, { total: number; done: number }> = {};
-
-  for (const issue of allIssues) {
-    const f = issue.fields;
-    if (!f) continue;
-    
-    if (f.issuetype?.name === "Epic") {
-      epicKeys.add(issue.key);
-      continue;
+  try {
+    let startAt = 0;
+    let isLast = false;
+    while (!isLast) {
+      const { data } = await axios.get(epicUrl, { params: { startAt, maxResults: 100 }, headers });
+      const values = data.values || [];
+      for (const val of values) {
+        if (val.key) {
+          epicKeys.add(val.key);
+        }
+      }
+      isLast = data.isLast ?? true;
+      startAt += values.length;
+      if (values.length === 0) break;
     }
-    
-    const ek = f.epic?.key || (f.parent?.fields?.issuetype?.name === "Epic" ? f.parent.key : null);
-    if (ek) {
-      epicKeys.add(ek);
-      if (!stats[ek]) {
-        stats[ek] = { total: 0, done: 0 };
+  } catch (err: any) {
+    logger.error("getEpicsFromBoardService: failed to fetch epics from board agile API", { boardId, error: err?.message });
+  }
+
+  // Fallback: search for issues with type Epic on the board if agile API returned no epics (takes only 1 request)
+  if (epicKeys.size === 0) {
+    logger.info("getEpicsFromBoardService: no epics found via Agile Board Epic API, trying fallback board issue search", { boardId });
+    try {
+      const { data } = await axios.get(`${url}/rest/agile/1.0/board/${boardId}/issue`, {
+        params: { jql: "issuetype = Epic", maxResults: 100, fields: "key" },
+        headers,
+      });
+      const issues = data.issues || [];
+      for (const issue of issues) {
+        if (issue.key) {
+          epicKeys.add(issue.key);
+        }
       }
-      stats[ek].total++;
-      if (f.status?.statusCategory?.key === "done") {
-        stats[ek].done++;
-      }
+      logger.info("getEpicsFromBoardService: fallback resolved epic keys", { boardId, epicCount: epicKeys.size });
+    } catch (fallbackErr: any) {
+      logger.error("getEpicsFromBoardService: fallback board issue search failed", { error: fallbackErr?.message });
     }
   }
 
   logger.info("getEpicsFromBoardService: resolved epic keys", { boardId, epicCount: epicKeys.size });
 
-  const epicPromises = [...epicKeys].map(async (k): Promise<Epic> => {
+  const keysArray = [...epicKeys];
+  const fetchedEpicDetails: Record<string, any> = {};
+
+  if (keysArray.length > 0) {
+    const chunkSize = 100;
+    const chunkPromises = [];
+    for (let i = 0; i < keysArray.length; i += chunkSize) {
+      const chunk = keysArray.slice(i, i + chunkSize);
+      const jqlQuery = `key in (${chunk.map(k => `"${k}"`).join(",")})`;
+      chunkPromises.push(
+        axios.get(`${url}/rest/api/3/search/jql`, {
+          params: {
+            jql: jqlQuery,
+            maxResults: chunkSize,
+            fields: "summary,status,creator",
+          },
+          headers,
+        }).then(res => {
+          const issues = res.data.issues || [];
+          for (const issue of issues) {
+            fetchedEpicDetails[issue.key] = issue;
+          }
+        }).catch(err => {
+          logger.warn("getEpicsFromBoardService: failed to fetch bulk epic details chunk", {
+            keys: chunk,
+            error: err?.message,
+          });
+        })
+      );
+    }
+    await Promise.all(chunkPromises);
+  }
+
+  const stats: Record<string, { total: number; done: number }> = {};
+  for (const k of keysArray) {
+    stats[k] = { total: 0, done: 0 };
+  }
+
+  if (keysArray.length > 0) {
     try {
-      const { data } = await axios.get(`${url}/rest/api/3/issue/${k}`, {
-        params: { fields: "summary,status,creator" },
-        headers,
-      });
-      const f = data.fields;
+      const chunkSize = 50;
+      const statsPromises = [];
+      for (let i = 0; i < keysArray.length; i += chunkSize) {
+        const chunk = keysArray.slice(i, i + chunkSize);
+        const jqlQuery = `"Epic Link" in (${chunk.map(k => `"${k}"`).join(",")}) OR parent in (${chunk.map(k => `"${k}"`).join(",")})`;
+        statsPromises.push(
+          axios.get(`${url}/rest/api/3/search/jql`, {
+            params: {
+              jql: jqlQuery,
+              maxResults: 1000,
+              fields: "epic,parent,status",
+            },
+            headers,
+          }).then(res => {
+            const issues = res.data.issues || [];
+            for (const issue of issues) {
+              const f = issue.fields || {};
+              const ek = f.epic?.key || (f.parent?.fields?.issuetype?.name === "Epic" ? f.parent.key : null);
+              if (ek && stats[ek]) {
+                stats[ek].total++;
+                if (f.status?.statusCategory?.key === "done") {
+                  stats[ek].done++;
+                }
+              }
+            }
+          }).catch(err => {
+            logger.warn("getEpicsFromBoardService: failed to fetch stats chunk", { keys: chunk, error: err?.message });
+          })
+        );
+      }
+      await Promise.all(statsPromises);
+    } catch (err: any) {
+      logger.warn("getEpicsFromBoardService: failed to fetch issue counts for epics", { error: err?.message });
+    }
+  }
+
+  const result: Epic[] = keysArray.map((k) => {
+    const issue = fetchedEpicDetails[k];
+    if (issue) {
+      const f = issue.fields || {};
       const s = stats[k];
-      const progress = s && s.total > 0 
-        ? Math.round((s.done / s.total) * 100) 
+      const progress = s && s.total > 0
+        ? Math.round((s.done / s.total) * 100)
         : (f.status?.statusCategory?.key === "done" ? 100 : 0);
 
       return {
@@ -125,8 +221,7 @@ export const getEpicsFromBoardService = async (url: string, auth: string, boardI
         creator: f.creator?.displayName ?? "Unknown",
         creatorAvatar: f.creator?.avatarUrls?.["24x24"] ?? "",
       };
-    } catch (err: any) {
-      logger.warn("getEpicsFromBoardService: failed to fetch epic details, using fallback", { epicKey: k, error: err?.message });
+    } else {
       return {
         key: k,
         name: k,
@@ -139,8 +234,8 @@ export const getEpicsFromBoardService = async (url: string, auth: string, boardI
     }
   });
 
-  const result = await Promise.all(epicPromises);
   logger.info("getEpicsFromBoardService: success", { boardId, epicCount: result.length });
+  _epicsCache.set(boardId, { data: result, expiresAt: Date.now() + CACHE_TTL });
   return result;
 };
 
@@ -149,12 +244,24 @@ export const getEpicDetailsPageService = async (url: string, auth: string, epicK
   const headers = { Authorization: `Basic ${auth}`, Accept: "application/json" };
   const jql = `"epic link" = "${epicKey}" OR "parent" = "${epicKey}" OR "Epic Link" = "${epicKey}"`;
 
-  const [epicRes, searchRes] = await Promise.all([
-    axios.get(`${url}/rest/api/3/issue/${epicKey}`, {
-      params: { fields: "summary,status,creator" },
-      headers,
-    }),
-    axios.get(`${url}/rest/api/3/search/jql`, {
+  // Find epic details in _epicsCache if available
+  let cachedEpic: Epic | undefined;
+  for (const [_, cached] of _epicsCache.entries()) {
+    if (cached.expiresAt > Date.now()) {
+      const found = cached.data.find((e) => e.key === epicKey);
+      if (found) {
+        cachedEpic = found;
+        break;
+      }
+    }
+  }
+
+  let epicData: any = null;
+  let searchRes: any;
+
+  if (cachedEpic) {
+    logger.info("getEpicDetailsPageService: using cached epic details", { epicKey });
+    searchRes = await axios.get(`${url}/rest/api/3/search/jql`, {
       params: {
         jql,
         maxResults: 200,
@@ -162,17 +269,35 @@ export const getEpicDetailsPageService = async (url: string, auth: string, epicK
         fields: "summary,status,priority,assignee,reporter,issuetype,created,resolutiondate,updated,labels,components,customfield_10016,customfield_10026,customfield_10030",
       },
       headers,
-    }),
-  ]);
+    });
+  } else {
+    logger.info("getEpicDetailsPageService: fetching epic details from API", { epicKey });
+    const [epicResVal, searchResVal] = await Promise.all([
+      axios.get(`${url}/rest/api/3/issue/${epicKey}`, {
+        params: { fields: "summary,status,creator" },
+        headers,
+      }),
+      axios.get(`${url}/rest/api/3/search/jql`, {
+        params: {
+          jql,
+          maxResults: 200,
+          expand: "changelog",
+          fields: "summary,status,priority,assignee,reporter,issuetype,created,resolutiondate,updated,labels,components,customfield_10016,customfield_10026,customfield_10030",
+        },
+        headers,
+      }),
+    ]);
+    epicData = epicResVal.data;
+    searchRes = searchResVal;
+  }
 
-  const epicData = epicRes.data;
   const searchData = searchRes.data;
 
   logger.info("getEpicDetailsPageService: fetched issues", { epicKey, issueCount: (searchData.issues || []).length });
 
   const issues = (searchData.issues || []).map((issue: any) => {
     const f = issue.fields;
-    
+
     const changelogList: any[] = [];
     if (issue.changelog?.histories) {
       for (const history of issue.changelog.histories) {
@@ -217,21 +342,26 @@ export const getEpicDetailsPageService = async (url: string, auth: string, epicK
   const childIssues = issues.filter((i: any) => i.key !== epicKey);
   const total = childIssues.length;
   const done = childIssues.filter((i: any) => i.statusCategory === "Done").length;
-  
-  const isEpicDone = epicData.fields.status?.statusCategory?.key === "done";
-  const progress = total > 0 ? Math.round((done / total) * 100) : (isEpicDone ? 100 : 0);
+
+  let progress = 0;
+  if (cachedEpic) {
+    progress = total > 0 ? Math.round((done / total) * 100) : cachedEpic.progress;
+  } else {
+    const isEpicDone = epicData.fields.status?.statusCategory?.key === "done";
+    progress = total > 0 ? Math.round((done / total) * 100) : (isEpicDone ? 100 : 0);
+  }
 
   logger.info("getEpicDetailsPageService: success", { epicKey, childIssues: total, done, progress });
 
   return {
     epic: {
       key: epicKey,
-      name: epicData.fields.summary || epicKey,
-      summary: epicData.fields.summary || epicKey,
-      status: epicData.fields.status?.name ?? "Unknown",
+      name: cachedEpic ? cachedEpic.name : (epicData.fields.summary || epicKey),
+      summary: cachedEpic ? cachedEpic.summary : (epicData.fields.summary || epicKey),
+      status: cachedEpic ? cachedEpic.status : (epicData.fields.status?.name ?? "Unknown"),
       progress,
-      creator: epicData.fields.creator?.displayName ?? "Unknown",
-      creatorAvatar: epicData.fields.creator?.avatarUrls?.["24x24"] ?? "",
+      creator: cachedEpic ? cachedEpic.creator : (epicData.fields.creator?.displayName ?? "Unknown"),
+      creatorAvatar: cachedEpic ? cachedEpic.creatorAvatar : (epicData.fields.creator?.avatarUrls?.["24x24"] ?? ""),
     },
     issues,
   };
@@ -395,10 +525,10 @@ export const getDashboardDataService = async (url: string, auth: string, boardId
     statusCounts = sRes; typeCounts = tRes; priorityCounts = pRes;
   }
 
- 
+
   const scale = filterTotal > 0 ? boardTotal / filterTotal : 1;
   const scaledTodo = Math.round(todo * scale);
-  const scaledIP   = Math.round(inProgress * scale);
+  const scaledIP = Math.round(inProgress * scale);
   const scaledDone = boardTotal - scaledTodo - scaledIP; // ensure exact sum
 
   const statusTableData = statusCounts
