@@ -9,6 +9,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useState } from "react";
+import { useEffect } from "react";
 import { cn } from "../utils/utils";
 import { NavLink, useNavigate } from "react-router-dom";
 import { Button } from "./Button";
@@ -23,13 +24,25 @@ const navItems = [
   { to: "/epics", label: "Epic Intelligence", icon: Map },
 ];
 
-const name = localStorage.getItem("user_name")
-
-
 export const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
+  const [name, setName] = useState<string | null>(() => localStorage.getItem("user_name"));
   const navigate = useNavigate();
   const { clearFilters } = useFilter();
+
+  // update name when storage changes or when app dispatches a user update event
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "user_name") setName(e.newValue);
+    };
+    const onUserUpdate = () => setName(localStorage.getItem("user_name"));
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("user:update", onUserUpdate);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("user:update", onUserUpdate);
+    };
+  }, []);
 
   const handleLogout = async () => {
     try {

@@ -13,6 +13,7 @@ const SettingsPage = lazy(() => import("./pages/Settings").then((m) => ({ defaul
 
 // Lazy load route pages (Default export)
 const ZephyrPage = lazy(() => import("./pages/ZephyrPage"))
+const SprintAnalysis = lazy(() => import("./pages/SprintAnalysis"))
 
 const AppLayout = () => {
   return (
@@ -42,6 +43,7 @@ function App() {
           <Route path="/" element={<Login />} />
           <Route element={<AppLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/sprints" element={<SprintAnalysis />} />
             <Route path="/epics" element={<EpicsPage />} />
             <Route path="/epics/:epicKey" element={<EpicDetailsPage />} />
             <Route path="/settings" element={<SettingsPage />} />

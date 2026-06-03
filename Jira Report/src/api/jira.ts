@@ -1,7 +1,6 @@
-import axios, { Axios } from "axios";
+import axios, { type AxiosInstance } from "axios";
 
-
-export const api: Axios = axios.create({
+export const api: AxiosInstance = axios.create({
   baseURL: import.meta.env.VITE_CLIENT_URL,
   withCredentials: true,
 });
@@ -15,19 +14,18 @@ export const logoutApi = async () => {
 }
 
 export const getProjects = async () => {
-  return await api.get("/getProjects");
+  return await api.get("/getprojects");
 }
 
 export const getBoards = async (projectKey: string) => {
-  return await api.get(`/getBoards/${encodeURIComponent(projectKey)}`);
+  return await api.get(`/getboards/${encodeURIComponent(projectKey)}`);
 }
 
-export const getBoardIssues = async (boardId: number) => {
-  return await api.get(`/getboardissues/${boardId}`);
-}
-
-export const getEpics = async (boardId: number) => {
-  return await api.get(`/getepics/${boardId}`);
+export const getEpics = async (boardId: number, dateFrom?: string, dateTo?: string) => {
+  const p = new URLSearchParams();
+  if (dateFrom) p.set("from", dateFrom);
+  if (dateTo) p.set("to", dateTo);
+  return await api.get(`/getepics/${boardId}${p.toString() ? `?${p}` : ""}`);
 }
 
 export const getEpicDetailsPage = async (epicKey: string, refresh = false) => {
@@ -69,6 +67,39 @@ export interface DashboardData {
   priorityData: { name: string; count: number }[];
 }
 
-export const getDashboard = async (boardId: number): Promise<{ data: DashboardData & { success: boolean } }> => {
-  return await api.get(`/dashboard/${boardId}`);
+export const getDashboard = async (boardId: number, dateFrom?: string, dateTo?: string): Promise<{ data: DashboardData & { success: boolean } }> => {
+  const p = new URLSearchParams();
+  if (dateFrom) p.set("from", dateFrom);
+  if (dateTo) p.set("to", dateTo);
+  return await api.get(`/dashboard/${boardId}${p.toString() ? `?${p}` : ""}`);
+}
+
+// ─── Sprint Analysis ─────────────────────────────────────────────────────────
+
+export interface SprintData {
+  id: number;
+  name: string;
+  state: string;
+  startDate: string | null;
+  endDate: string | null;
+  completeDate: string | null;
+  goal: string | null;
+  totalIssues: number;
+  doneCount: number;
+  inProgressCount: number;
+  todoCount: number;
+  committedPoints: number;
+  completedPoints: number;
+  completionRate: number;
+  assigneeBreakdown: { name: string; avatar: string; count: number; points: number }[];
+  issueTypeBreakdown: { name: string; count: number }[];
+}
+
+export interface SprintAnalysisData {
+  sprints: SprintData[];
+  velocityChart: { name: string; committed: number; completed: number }[];
+}
+
+export const getSprintAnalysis = async (boardId: number): Promise<{ data: SprintAnalysisData & { success: boolean } }> => {
+  return await api.get(`/sprintanalysis/${boardId}`);
 }

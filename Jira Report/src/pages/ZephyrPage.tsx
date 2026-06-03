@@ -117,6 +117,7 @@ export default function ZephyrPage() {
   }, [issueKey, selectedProject]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData(false);
   }, [fetchData]);
 

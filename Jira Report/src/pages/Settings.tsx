@@ -40,6 +40,7 @@ export function SettingsPage() {
     if (!zephyrAccountId) {
       const loggedInAccountId = localStorage.getItem("user_account_id");
       if (loggedInAccountId) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setZephyrAccountId(loggedInAccountId);
       }
     }
@@ -48,6 +49,7 @@ export function SettingsPage() {
   // Auto-populate Project Key from global filter if not explicitly set yet
   useEffect(() => {
     if (selectedProject) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setZephyrProjectKey(selectedProject);
     }
   }, [selectedProject]);
@@ -76,8 +78,9 @@ export function SettingsPage() {
       localStorage.setItem("zephyr_project_key", zephyrProjectKey)
 
       setZephyrStatus({ type: "success", message: "Zephyr configuration saved successfully!" })
-    } catch (err: any) {
-      setZephyrStatus({ type: "error", message: err?.response?.data?.message || "Failed to save Zephyr configuration" })
+    } catch (err) {
+      const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setZephyrStatus({ type: "error", message: message || "Failed to save Zephyr configuration" })
     } finally {
       setZephyrSaving(false)
     }

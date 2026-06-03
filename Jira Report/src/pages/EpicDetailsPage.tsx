@@ -107,13 +107,14 @@ const epicCache: Record<string, EpicCacheData> = {};
 export function EpicDetailsPage() {
   const { epicKey } = useParams<{ epicKey: string }>();
   const navigate = useNavigate();
+  const { selectedProject } = useFilter();
 
   const [epic, setEpic] = useState<Epic | null>(null);
   const [issues, setIssues] = useState<EpicIssue[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedIssue, setSelectedIssue] = useState<EpicIssue | null>(null);
   const [issuesWithTests, setIssuesWithTests] = useState<Set<string>>(new Set());
-  const { selectedProject } = useFilter();
   const [lastUpdated, setLastUpdated] = useState<string>("");
 
   // Filters
@@ -138,12 +139,14 @@ export function EpicDetailsPage() {
         setIssues(cached.issues);
         setIssuesWithTests(cached.issuesWithTests);
         setLastUpdated(cached.timestamp);
+        setError(null);
         setLoading(false);
       });
       return;
     }
 
     setLoading(true);
+    setError(null);
     getEpicDetailsPage(epicKey, forceRefresh)
       .then((res) => {
         if (res.data) {
@@ -155,6 +158,7 @@ export function EpicDetailsPage() {
           setEpic(ep);
           setIssues(iss);
           setLastUpdated(timeStr);
+          setError(null);
 
           // Check Zephyr tests for issues
           const keys = iss.map((i) => i.key);
@@ -190,10 +194,14 @@ export function EpicDetailsPage() {
               timestamp: timeStr,
             };
           }
+        } else {
+          setError("No data returned from server. The epic may not exist or you may not have access.");
         }
       })
       .catch((err) => {
-        console.error(err);
+        console.error("Failed to fetch epic details:", err);
+        const message = err?.response?.data?.message || err?.message || "Failed to load epic details";
+        setError(message);
       })
       .finally(() => setLoading(false));
   }, [epicKey, selectedProject]);
@@ -202,6 +210,7 @@ export function EpicDetailsPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData(false);
   }, [fetchData]);
+
 
   // Unique lists for filters
   const uniqueTypes = useMemo(() => Array.from(new Set(issues.map((i) => i.issueType))).filter(Boolean).sort(), [issues]);
@@ -273,6 +282,26 @@ export function EpicDetailsPage() {
     return (
       <div className="p-6 space-y-6 text-center text-slate-400">
         <p className="animate-pulse">Loading Epic details page...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <button onClick={() => navigate("/epics")} className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800 mb-6 transition-colors cursor-pointer">
+          <ArrowLeft className="h-4 w-4" /> Back to Epics
+        </button>
+        <div className="text-center py-12">
+          <p className="text-red-500 font-medium mb-2">Failed to load epic details</p>
+          <p className="text-sm text-slate-400 mb-4">{error}</p>
+          <button
+            onClick={() => fetchData(true)}
+            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }

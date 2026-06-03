@@ -2,12 +2,12 @@ import type { HTMLAttributes } from "react";
 import { cn } from "../utils/utils";
 
 
-interface CardProps extends HTMLAttributes<HTMLDivElement> {}
-interface CardHeaderProps extends HTMLAttributes<HTMLDivElement> {}
-interface CardTitleProps extends HTMLAttributes<HTMLHeadingElement> {}
-interface CardDescriptionProps extends HTMLAttributes<HTMLParagraphElement> {}
-interface CardContentProps extends HTMLAttributes<HTMLDivElement> {}
-interface CardFooterProps extends HTMLAttributes<HTMLDivElement> {}
+type CardProps = HTMLAttributes<HTMLDivElement>;
+type CardHeaderProps = HTMLAttributes<HTMLDivElement>;
+type CardTitleProps = HTMLAttributes<HTMLHeadingElement>;
+type CardDescriptionProps = HTMLAttributes<HTMLParagraphElement>;
+type CardContentProps = HTMLAttributes<HTMLDivElement>;
+type CardFooterProps = HTMLAttributes<HTMLDivElement>;
 
 export const Card = ({ className, ...props }: CardProps) => (
   <div
