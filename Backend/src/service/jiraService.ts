@@ -501,10 +501,11 @@ export const getDashboardDataService = async (url: string, auth: string, boardId
   const headers = makeHeaders(auth);
   const boardIssueUrl = `${url}/rest/agile/1.0/board/${boardId}/issue`;
 
-  const jqlParts: string[] = ["sprint in openSprints()"];
+  const jqlParts: string[] = [];
   if (dateFrom) jqlParts.push(`created >= "${dateFrom}"`);
   if (dateTo) jqlParts.push(`created <= "${dateTo}"`);
-  const baseParams = { fields: "status,priority,issuetype", maxResults: 100, jql: jqlParts.join(" AND ") };
+  const baseParams: Record<string, any> = { fields: "status,priority,issuetype", maxResults: 100 };
+  if (jqlParts.length) baseParams.jql = jqlParts.join(" AND ");
 
   // Single first call — gets total count and first page
   let firstData: any;
