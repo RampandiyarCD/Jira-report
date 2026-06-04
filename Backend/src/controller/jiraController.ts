@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getBoardService, getDashboardDataService, getEpicDetailsPageService, getEpicsFromBoardService, getProjectService, getSprintAnalysisService, loginService } from "../service/jiraService";
+import { getBoardService, getDefectAnalyticsService, getDashboardDataService, getEpicDetailsPageService, getEpicsFromBoardService, getIssueService, getProjectService, getSprintAnalysisService, loginService } from "../service/jiraService";
 import { getZephyrDetailsForIssueService, checkIssuesHaveTestsService } from "../service/zephyrService";
 import logger from "../utils/logger";
 
@@ -191,4 +191,28 @@ export const getSprintAnalysisController = async (req: Request, res: Response): 
     const data = await getSprintAnalysisService(creds.jira_base_url, creds.jira_auth, boardId);
     res.status(200).json({ success: true, ...data });
   } catch (e: any) { catchErr(res, "Get Sprint Analysis", "Failed to fetch sprint analysis data")(e); }
+};
+
+// ─── Defect Analytics Controller ─────────────────────────────────────────────
+
+export const getDefectAnalyticsController = async (req: Request, res: Response): Promise<void> => {
+  const creds = requireCreds(req);
+  if (!creds) { res.status(401).json({ success: false, message: "Unauthorized" }); return; }
+  const boardId = req.params.boardId as string;
+  try {
+    const data = await getDefectAnalyticsService(creds.jira_base_url, creds.jira_auth, boardId);
+    res.status(200).json({ success: true, ...data });
+  } catch (e: any) { catchErr(res, "Get Defect Analytics", "Failed to fetch defect analytics")(e); }
+};
+
+// ─── Issue Detail Controller ──────────────────────────────────────────────────
+
+export const getIssueController = async (req: Request, res: Response): Promise<void> => {
+  const creds = requireCreds(req);
+  if (!creds) { res.status(401).json({ success: false, message: "Unauthorized" }); return; }
+  const issueKey = req.params.issueKey as string;
+  try {
+    const data = await getIssueService(creds.jira_base_url, creds.jira_auth, issueKey);
+    res.status(200).json({ success: true, ...data });
+  } catch (e: any) { catchErr(res, "Get Issue", "Failed to fetch issue details")(e); }
 };

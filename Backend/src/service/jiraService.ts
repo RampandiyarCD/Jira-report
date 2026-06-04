@@ -744,7 +744,7 @@ export const getDashboardDataService = async (url: string, auth: string, boardId
         retryWithBackoff(() => axios.get(boardIssueUrl, {
           params: { startAt: allIssues.length + i * 100, maxResults: 100, fields: "status,priority,issuetype", ...(dateJQL ? { jql: dateJQL } : {}) },
           headers,
-        })).then(r => (r.data.issues ?? []) as any[]).catch((): any[] => [])
+        })).then((r: any) => (r.data.issues ?? []) as any[]).catch((): any[] => [])
       )
     );
     for (const page of pages) allIssues.push(...page);
