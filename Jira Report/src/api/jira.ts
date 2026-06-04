@@ -55,50 +55,6 @@ export const checkZephyrIssues = async (issueKeys: string[], projectKey?: string
   return await api.post("/checkzephyrissues", { issueKeys, projectKey });
 }
 
-// ─── Defect Analytics ─────────────────────────────────────────────────────────
-
-export interface DefectPriority { priority: string; count: number; openCount: number; avgDays: number }
-export interface DefectAssignee { name: string; open: number; resolved: number }
-export interface DefectBug      { key: string; summary: string; priority: string; ageDays: number; assignee: string }
-export interface OpenIssue      { key: string; summary: string; priority: string; status: string; ageDays: number; assignee: string }
-
-export interface DefectAnalyticsData {
-  totalBugs: number; openBugs: number; resolvedBugs: number;
-  critHighOpen: number; avgResolutionDays: number; escapeRate: number;
-  byPriority: DefectPriority[];
-  trend: { week: string; created: number; resolved: number }[];
-  aging: { label: string; count: number; color: string }[];
-  byAssignee: DefectAssignee[];
-  oldestBugs: DefectBug[];
-  openIssuesList: OpenIssue[];
-}
-
-export const getDefectAnalytics = async (boardId: number): Promise<{ data: DefectAnalyticsData & { success: boolean } }> => {
-  return await api.get(`/defect-analytics/${boardId}`);
-}
-
-// ─── Single Issue ─────────────────────────────────────────────────────────────
-
-export interface IssueComment { author: string; avatarUrl: string; body: string; created: string }
-export interface IssueStatusHistory { from: string; to: string; author: string; date: string }
-
-export interface IssueDetail {
-  key: string; summary: string; description: string;
-  status: string; statusCategoryKey: string; statusCategoryName: string;
-  priority: string; issueType: string;
-  assignee: { displayName: string; avatarUrl: string } | null;
-  reporter: { displayName: string; avatarUrl: string } | null;
-  created: string | null; updated: string | null; resolutionDate: string | null;
-  labels: string[]; components: string[];
-  storyPoints: number | null;
-  statusHistory: IssueStatusHistory[];
-  comments: IssueComment[];
-}
-
-export const getIssue = async (issueKey: string): Promise<{ data: IssueDetail & { success: boolean } }> => {
-  return await api.get(`/issue/${encodeURIComponent(issueKey)}`);
-}
-
 // ─── Dashboard ───────────────────────────────────────────────────────────────
 
 export interface DashboardData {

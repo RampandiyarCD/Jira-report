@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getIssue, type IssueDetail } from '../api/jira'
+import { getIssue, type IssueDetail } from '../services/defectAnalytics'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/Card'
 import {
   ArrowLeft, User, Calendar, Tag, AlertTriangle,

@@ -1,7 +1,10 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useFilter } from '../context/FilterContext'
 import { useNavigate } from 'react-router-dom'
-import { getDefectAnalytics, type DefectAnalyticsData, type OpenIssue } from '../api/jira'
+import {
+  fetchDefectAnalytics,
+  type DefectAnalyticsData, type OpenIssue,
+} from '../services/defectAnalytics'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/Card'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -67,28 +70,6 @@ function renderPriorityLabelLine(props: PieLabelRenderProps) {
       strokeWidth={1.5}
     />
   )
-}
-
-// ─── module-level cache ───────────────────────────────────────────────────────
-
-const CACHE_TTL = 5 * 60 * 1000
-type CacheEntry = { data: DefectAnalyticsData; expiresAt: number }
-const defectCache: Record<string, CacheEntry> = {}
-const defectInflight: Record<string, Promise<DefectAnalyticsData>> = {}
-
-function cacheKey(boardId: string) {
-  return `${localStorage.getItem('user_account_id') ?? 'anon'}::${boardId}`
-}
-function getCached(boardId: string): DefectAnalyticsData | null {
-  const e = defectCache[cacheKey(boardId)]
-  return e && e.expiresAt > Date.now() ? e.data : null
-}
-function setCached(boardId: string, data: DefectAnalyticsData) {
-  defectCache[cacheKey(boardId)] = { data, expiresAt: Date.now() + CACHE_TTL }
-}
-function invalidate(boardId: string) {
-  delete defectCache[cacheKey(boardId)]
-  delete defectInflight[cacheKey(boardId)]
 }
 
 // ─── sub-components ───────────────────────────────────────────────────────────
@@ -246,42 +227,25 @@ export function DefectAnalyticsPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [modal, setModal] = useState<{ title: string; issues: OpenIssue[] } | null>(null)
 
-  const fetchData = useCallback((boardId: string, bust = false) => {
-    if (bust) invalidate(boardId)
-    const key = cacheKey(boardId)
-    const cached = getCached(boardId)
-    return cached
-      ? Promise.resolve(cached)
-      : defectInflight[key] ??
-        (defectInflight[key] = getDefectAnalytics(Number(boardId))
-          .then((res) => { const d = res.data; setCached(boardId, d); return d })
-          .finally(() => { delete defectInflight[key] }))
-  }, [])
-
   useEffect(() => {
     if (!selectedBoard) return
     let cancelled = false
-    const run = async () => {
-      setLoading(true)
-      try {
-        const d = await fetchData(selectedBoard)
-        if (!cancelled) setData(d)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    run()
+    setLoading(true)
+    fetchDefectAnalytics(selectedBoard)
+      .then((d) => { if (!cancelled) setData(d) })
+      .catch(console.error)
+      .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [selectedBoard, fetchData])
+  }, [selectedBoard])
 
   const handleRefresh = useCallback(() => {
     if (!selectedBoard || refreshing) return
     setRefreshing(true)
-    fetchData(selectedBoard, true)
+    fetchDefectAnalytics(selectedBoard, true)
       .then((d) => setData(d))
       .catch(console.error)
       .finally(() => setRefreshing(false))
-  }, [selectedBoard, refreshing, fetchData])
+  }, [selectedBoard, refreshing])
 
   if (!selectedBoard) {
     return (
@@ -305,6 +269,10 @@ export function DefectAnalyticsPage() {
 
   const agingMax = Math.max(...data.aging.map((a) => a.count), 1)
   const assigneeMax = Math.max(...data.byAssignee.map((a) => a.open + a.resolved), 1)
+  const priorityTotal = data.byPriority.reduce((s, p) => s + p.count, 0)
+  const pieData = data.byPriority.filter(
+    (p) => p.count > 0 && priorityTotal > 0 && p.count / priorityTotal >= 0.05,
+  )
 
   return (
     <div className="p-6 space-y-6">
@@ -398,44 +366,33 @@ export function DefectAnalyticsPage() {
             <CardTitle className="text-base">Bugs by Priority</CardTitle>
           </CardHeader>
           <CardContent>
-            {(() => {
-              // Pre-filter: only include slices that are ≥ 5 % of the total.
-              // Removing tiny slices from the data entirely is the only reliable
-              // way to prevent Recharts rendering stray labels for them.
-              const total = data.byPriority.reduce((s, p) => s + p.count, 0)
-              const pieData = data.byPriority.filter(
-                p => p.count > 0 && total > 0 && p.count / total >= 0.05,
-              )
-              return (
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart margin={{ top: 20, right: 50, bottom: 20, left: 50 }}>
-                    <Pie
-                      data={pieData}
-                      dataKey="count"
-                      nameKey="priority"
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={55}
-                      outerRadius={80}
-                      paddingAngle={3}
-                      label={renderPriorityLabel}
-                      labelLine={renderPriorityLabelLine}
-                    >
-                      {pieData.map((entry, idx) => (
-                        <Cell key={idx} fill={PRIORITY_COLOR[entry.priority] ?? '#94a3b8'} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={TOOLTIP_STYLE}
-                      formatter={(value) => {
-                        const n = Number(value ?? 0)
-                        return [`${n} ${n === 1 ? 'bug' : 'bugs'}`]
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              )
-            })()}
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart margin={{ top: 20, right: 50, bottom: 20, left: 50 }}>
+                <Pie
+                  data={pieData}
+                  dataKey="count"
+                  nameKey="priority"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={55}
+                  outerRadius={80}
+                  paddingAngle={3}
+                  label={renderPriorityLabel}
+                  labelLine={renderPriorityLabelLine}
+                >
+                  {pieData.map((entry, idx) => (
+                    <Cell key={idx} fill={PRIORITY_COLOR[entry.priority] ?? '#94a3b8'} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={TOOLTIP_STYLE}
+                  formatter={(value) => {
+                    const n = Number(value ?? 0)
+                    return [`${n} ${n === 1 ? 'bug' : 'bugs'}`]
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
       </div>
