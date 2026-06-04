@@ -7,6 +7,7 @@ import {
   getEpicsController,
   getIssueController,
   getProjectController,
+  getSprintAnalysisController,
   loginController,
   logoutController,
   saveZephyrConfigController,
@@ -25,6 +26,7 @@ jiraRouter.get("/getepicdetailspage/:epicKey", getEpicDetailsPageController);
 jiraRouter.get("/defect-analytics/:boardId", getDefectAnalyticsController);
 jiraRouter.get("/issue/:issueKey", getIssueController);
 jiraRouter.get("/dashboard/:boardId", getDashboardController);
+jiraRouter.get("/sprintanalysis/:boardId", getSprintAnalysisController);
 
 // Zephyr routes
 jiraRouter.post("/savezephyrconfig", saveZephyrConfigController);

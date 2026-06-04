@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "../components/Card";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { getEpics } from "../api/jira";
 import { useFilter } from "../context/FilterContext";
 import { Search, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2, Clock, X, RotateCw, Layers } from "lucide-react";
@@ -20,45 +20,68 @@ interface Epic {
 const STATUS_FILTER_VALUES = ["all", "completed", "inprogress"] as const;
 type StatusFilter = (typeof STATUS_FILTER_VALUES)[number];
 
+// Module-level cache — same pattern as Dashboard's dashboardCache
 const epicCache: Record<string, { epics: Epic[]; timestamp: string }> = {};
 
 export function EpicsPage() {
   const navigate = useNavigate();
-  const [epics, setEpics] = useState<Epic[]>([]);
-  const [loading, setLoading] = useState(false);
+  const { selectedBoard: boardId, dateFrom, dateTo } = useFilter();
+  const cacheKey = `${boardId}|${dateFrom}|${dateTo}`;
+
+  // Single state object tied to its boardId — exact same pattern as Dashboard.
+  // loading and epics are derived, so they always match the current boardId:
+  // switching boards immediately shows a spinner, never stale data.
+  const [boardData, setBoardData] = useState<{ boardId: string; epics: Epic[]; timestamp: string } | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const loading = !!boardId && boardData?.boardId !== cacheKey;
+  const epics = boardData?.boardId === cacheKey ? boardData.epics : [];
+  const lastUpdated = boardData?.boardId === cacheKey ? boardData.timestamp : "";
+
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [jiraStatusFilter, setJiraStatusFilter] = useState("all");
   const [sortKey, setSortKey] = useState<keyof Epic>("key");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
-  const [lastUpdated, setLastUpdated] = useState<string>("");
-
-  const { selectedBoard: boardId } = useFilter();
-
-  const fetchData = useCallback((force = false) => {
-    if (!boardId) return setEpics([]);
-    if (!force && epicCache[boardId]) {
-      setEpics(epicCache[boardId].epics);
-      setLastUpdated(epicCache[boardId].timestamp);
-      return;
-    }
-    setLoading(true);
-    getEpics(Number(boardId))
-      .then((res) => {
-        const data = res?.data?.epics || [];
-        const now = new Date();
-        const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        epicCache[boardId] = { epics: data, timestamp: timeStr };
-        setEpics(data);
-        setLastUpdated(timeStr);
-      })
-      .catch((err) => { console.error(err); setEpics([]); })
-      .finally(() => setLoading(false));
-  }, [boardId]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (!boardId) return;
+
+    let cancelled = false;
+
+    // Use cached entry if available (via Promise.resolve so setState is always async),
+    // otherwise fire a real request — identical to how Dashboard handles its cache.
+    const dataPromise = epicCache[cacheKey]
+      ? Promise.resolve(epicCache[cacheKey])
+      : getEpics(Number(boardId), dateFrom || undefined, dateTo || undefined).then((res) => {
+          const data: Epic[] = res?.data?.epics || [];
+          const timestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+          const entry = { epics: data, timestamp };
+          epicCache[cacheKey] = entry;
+          return entry;
+        });
+
+    dataPromise
+      .then((entry) => {
+        if (!cancelled) setBoardData({ boardId: cacheKey, ...entry });
+      })
+      .catch((err) => {
+        console.error(err);
+        if (!cancelled) setBoardData({ boardId: cacheKey, epics: [], timestamp: "" });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cacheKey, boardId, refreshKey]);
+
+  const handleRefresh = () => {
+    if (!boardId) return;
+    delete epicCache[cacheKey];
+    setBoardData(null);
+    setRefreshKey((k) => k + 1);
+  };
 
   const uniqueStatuses = Array.from(new Set(epics.map((e) => e.status))).filter(Boolean);
 
@@ -135,7 +158,7 @@ export function EpicsPage() {
               )}
               {boardId && (
                 <button
-                  onClick={() => fetchData(true)}
+                  onClick={handleRefresh}
                   title="Refresh from Jira"
                   className="text-slate-400 hover:text-blue-600 transition-colors p-1 rounded hover:bg-slate-100 cursor-pointer animate-none"
                 >

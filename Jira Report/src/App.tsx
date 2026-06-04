@@ -15,6 +15,7 @@ const BugDetailPage = lazy(() => import("./pages/BugDetailPage").then((m) => ({ 
 
 // Lazy load route pages (Default export)
 const ZephyrPage = lazy(() => import("./pages/ZephyrPage"))
+const SprintAnalysis = lazy(() => import("./pages/SprintAnalysis"))
 
 const AppLayout = () => {
   return (
@@ -44,6 +45,7 @@ function App() {
           <Route path="/" element={<Login />} />
           <Route element={<AppLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/sprints" element={<SprintAnalysis />} />
             <Route path="/epics" element={<EpicsPage />} />
             <Route path="/epics/:epicKey" element={<EpicDetailsPage />} />
             <Route path="/defects" element={<DefectAnalyticsPage />} />

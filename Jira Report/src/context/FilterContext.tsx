@@ -3,8 +3,12 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from "
 interface FilterContextType {
   selectedProject: string;
   selectedBoard: string;
+  dateFrom: string;
+  dateTo: string;
   setSelectedProject: (project: string) => void;
   setSelectedBoard: (board: string) => void;
+  setDateFrom: (d: string) => void;
+  setDateTo: (d: string) => void;
   clearFilters: () => void;
 }
 
@@ -17,6 +21,11 @@ export function FilterProvider({ children }: { children: ReactNode }) {
   const [selectedBoard, setSelectedBoard] = useState<string>(() => {
     return localStorage.getItem("selected_board_id") || "";
   });
+  const [dateFrom, setDateFromState] = useState<string>(() => localStorage.getItem("filter_date_from") || "");
+  const [dateTo, setDateToState] = useState<string>(() => localStorage.getItem("filter_date_to") || "");
+
+  const setDateFrom = (d: string) => setDateFromState(d);
+  const setDateTo = (d: string) => setDateToState(d);
 
   useEffect(() => {
     if (selectedProject) {
@@ -34,9 +43,21 @@ export function FilterProvider({ children }: { children: ReactNode }) {
     }
   }, [selectedBoard]);
 
+  useEffect(() => {
+    if (dateFrom) localStorage.setItem("filter_date_from", dateFrom);
+    else localStorage.removeItem("filter_date_from");
+  }, [dateFrom]);
+
+  useEffect(() => {
+    if (dateTo) localStorage.setItem("filter_date_to", dateTo);
+    else localStorage.removeItem("filter_date_to");
+  }, [dateTo]);
+
   const clearFilters = () => {
     setSelectedProject("");
     setSelectedBoard("");
+    setDateFromState("");
+    setDateToState("");
   };
 
   return (
@@ -44,8 +65,12 @@ export function FilterProvider({ children }: { children: ReactNode }) {
       value={{
         selectedProject,
         selectedBoard,
+        dateFrom,
+        dateTo,
         setSelectedProject,
         setSelectedBoard,
+        setDateFrom,
+        setDateTo,
         clearFilters,
       }}
     >
@@ -54,6 +79,7 @@ export function FilterProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useFilter() {
   const context = useContext(FilterContext);
   if (context === undefined) {

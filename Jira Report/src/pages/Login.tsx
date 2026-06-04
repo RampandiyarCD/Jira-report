@@ -43,14 +43,16 @@ export const Login = () => {
         navigate("/dashboard");
         localStorage.setItem("user_name", response.data.user.displayName)
         localStorage.setItem("user_account_id", response.data.user.accountId)
-        localStorage.setItem("jira_base_url", url.replace(/\/$/, ""))
+        // notify running SPA components that user info changed
+        window.dispatchEvent(new Event("user:update"));
       } else {
         showToast("Login failed. Please check your credentials.");
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error(error);
+      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
       showToast(
-        error?.response?.data?.message || "Login failed. Please check your credentials."
+        message || "Login failed. Please check your credentials."
       );
     } finally {
       setIsLoading(false);

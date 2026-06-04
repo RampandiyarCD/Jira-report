@@ -121,12 +121,13 @@ function StatusTable({ rows }: { rows: DashboardData['statusTableData'] }) {
 // ─── main page ────────────────────────────────────────────────────────────────
 
 export function Dashboard() {
-  const { selectedBoard } = useFilter()
+  const { selectedBoard, dateFrom, dateTo } = useFilter()
+  const cacheKey = `${selectedBoard}|${dateFrom}|${dateTo}`
 
   const [boardData, setBoardData] = useState<{ boardId: string; data: DashboardData } | null>(null)
 
-  const loading = !!selectedBoard && boardData?.boardId !== selectedBoard
-  const data = boardData?.boardId === selectedBoard ? boardData.data : null
+  const loading = !!selectedBoard && boardData?.boardId !== cacheKey
+  const data = boardData?.boardId === cacheKey ? boardData.data : null
 
   useEffect(() => {
     if (!selectedBoard) return
@@ -134,28 +135,28 @@ export function Dashboard() {
     let cancelled = false
 
     const dataPromise: Promise<DashboardData> =
-      dashboardCache[selectedBoard]
-        ? Promise.resolve(dashboardCache[selectedBoard])
-        : dashboardInflight[selectedBoard] ??
-          (dashboardInflight[selectedBoard] = getDashboard(Number(selectedBoard))
+      dashboardCache[cacheKey]
+        ? Promise.resolve(dashboardCache[cacheKey])
+        : dashboardInflight[cacheKey] ??
+          (dashboardInflight[cacheKey] = getDashboard(Number(selectedBoard), dateFrom || undefined, dateTo || undefined)
             .then((res) => {
               const d = res?.data
-              dashboardCache[selectedBoard] = d
+              dashboardCache[cacheKey] = d
               return d
             })
             .finally(() => {
-              delete dashboardInflight[selectedBoard]
+              delete dashboardInflight[cacheKey]
             }))
 
     dataPromise
       .then((d) => {
-        if (!cancelled) setBoardData({ boardId: selectedBoard, data: d })
+        if (!cancelled) setBoardData({ boardId: cacheKey, data: d })
       })
       .catch((err) => {
         if (!cancelled) {
           console.error(err)
           setBoardData({
-            boardId: selectedBoard,
+            boardId: cacheKey,
             data: { total: 0, todo: 0, inProgress: 0, done: 0, openCount: 0, statusChart: [], statusTableData: [], issueTypeData: [], priorityData: [] },
           })
         }
@@ -164,7 +165,7 @@ export function Dashboard() {
     return () => {
       cancelled = true
     }
-  }, [selectedBoard])
+  }, [selectedBoard, dateFrom, dateTo])
 
   const stats = { total: data?.total ?? 0, todo: data?.todo ?? 0, inProgress: data?.inProgress ?? 0, done: data?.done ?? 0 }
   const statusChartData = data?.statusChart ?? []

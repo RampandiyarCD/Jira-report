@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "../components/Card";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { getEpicDetailsPage, checkZephyrIssues } from "../api/jira";
 import { 
@@ -107,13 +107,14 @@ const epicCache: Record<string, EpicCacheData> = {};
 export function EpicDetailsPage() {
   const { epicKey } = useParams<{ epicKey: string }>();
   const navigate = useNavigate();
+  const { selectedProject } = useFilter();
 
   const [epic, setEpic] = useState<Epic | null>(null);
   const [issues, setIssues] = useState<EpicIssue[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedIssue, setSelectedIssue] = useState<EpicIssue | null>(null);
   const [issuesWithTests, setIssuesWithTests] = useState<Set<string>>(new Set());
-  const { selectedProject } = useFilter();
   const [lastUpdated, setLastUpdated] = useState<string>("");
 
   // Filters
@@ -127,35 +128,40 @@ export function EpicDetailsPage() {
   const [sortKey, setSortKey] = useState<keyof EpicIssue>("key");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
-  const fetchData = (forceRefresh = false) => {
+  const fetchData = useCallback((forceRefresh = false) => {
     if (!epicKey) return;
 
-    // Check cache first
+    // Check cache first — defer setState to avoid synchronous setState-in-effect
     if (!forceRefresh && epicCache[epicKey]) {
       const cached = epicCache[epicKey];
-      setEpic(cached.epic);
-      setIssues(cached.issues);
-      setIssuesWithTests(cached.issuesWithTests);
-      setLastUpdated(cached.timestamp);
-      setLoading(false);
+      Promise.resolve().then(() => {
+        setEpic(cached.epic);
+        setIssues(cached.issues);
+        setIssuesWithTests(cached.issuesWithTests);
+        setLastUpdated(cached.timestamp);
+        setError(null);
+        setLoading(false);
+      });
       return;
     }
 
     setLoading(true);
+    setError(null);
     getEpicDetailsPage(epicKey, forceRefresh)
       .then((res) => {
         if (res.data) {
           const ep = res.data.epic;
-          const iss = res.data.issues || [];
+          const iss: EpicIssue[] = res.data.issues || [];
           const now = new Date();
           const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
           setEpic(ep);
           setIssues(iss);
           setLastUpdated(timeStr);
+          setError(null);
 
           // Check Zephyr tests for issues
-          const keys = iss.map((i: any) => i.key);
+          const keys = iss.map((i) => i.key);
           if (keys.length > 0) {
             checkZephyrIssues(keys, selectedProject)
               .then((zRes) => {
@@ -188,17 +194,23 @@ export function EpicDetailsPage() {
               timestamp: timeStr,
             };
           }
+        } else {
+          setError("No data returned from server. The epic may not exist or you may not have access.");
         }
       })
       .catch((err) => {
-        console.error(err);
+        console.error("Failed to fetch epic details:", err);
+        const message = err?.response?.data?.message || err?.message || "Failed to load epic details";
+        setError(message);
       })
       .finally(() => setLoading(false));
-  };
+  }, [epicKey, selectedProject]);
 
   useEffect(() => {
-    fetchData(false); // don't force refresh, read from cache by default
-  }, [epicKey]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchData(false);
+  }, [fetchData]);
+
 
   // Unique lists for filters
   const uniqueTypes = useMemo(() => Array.from(new Set(issues.map((i) => i.issueType))).filter(Boolean).sort(), [issues]);
@@ -270,6 +282,26 @@ export function EpicDetailsPage() {
     return (
       <div className="p-6 space-y-6 text-center text-slate-400">
         <p className="animate-pulse">Loading Epic details page...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <button onClick={() => navigate("/epics")} className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800 mb-6 transition-colors cursor-pointer">
+          <ArrowLeft className="h-4 w-4" /> Back to Epics
+        </button>
+        <div className="text-center py-12">
+          <p className="text-red-500 font-medium mb-2">Failed to load epic details</p>
+          <p className="text-sm text-slate-400 mb-4">{error}</p>
+          <button
+            onClick={() => fetchData(true)}
+            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
@@ -705,7 +737,7 @@ function IssueDrawer({
               <div className="relative border-l-2 border-slate-100 pl-4 space-y-4">
                 {issue.changelog.map((c, i) => (
                   <div key={i} className="relative">
-                    <div className="absolute -left-[21px] top-1.5 w-2 h-2 rounded-full bg-blue-500 ring-4 ring-white" />
+                    <div className="absolute -left-5.25 top-1.5 w-2 h-2 rounded-full bg-blue-500 ring-4 ring-white" />
                     <div className="text-xs font-semibold text-slate-500">{formatDateWithTime(c.created)}</div>
                     <div className="text-xs text-slate-700 mt-1">
                       <span className="font-semibold text-slate-800">{c.author}</span> changed <span className="font-mono bg-slate-50 px-1 py-0.5 rounded border border-slate-100 text-slate-600">{c.field}</span>
