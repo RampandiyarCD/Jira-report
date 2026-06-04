@@ -501,30 +501,41 @@ export const getDashboardDataService = async (url: string, auth: string, boardId
   const headers = makeHeaders(auth);
   const boardIssueUrl = `${url}/rest/agile/1.0/board/${boardId}/issue`;
 
-  const dateJQL = [dateFrom && `created >= "${dateFrom}"`, dateTo && `created <= "${dateTo}"`].filter(Boolean).join(" AND ");
+  const jqlParts: string[] = ["sprint in openSprints()"];
+  if (dateFrom) jqlParts.push(`created >= "${dateFrom}"`);
+  if (dateTo) jqlParts.push(`created <= "${dateTo}"`);
+  const baseParams = { fields: "status,priority,issuetype", maxResults: 100, jql: jqlParts.join(" AND ") };
 
-  const { data: firstPage } = await axios
-    .get(boardIssueUrl, { params: { startAt: 0, maxResults: 100, fields: "status,priority,issuetype", ...(dateJQL ? { jql: dateJQL } : {}) }, headers })
-    .catch(() => ({ data: { total: 0, issues: [] as any[] } }));
+  // Single first call — gets total count and first page
+  let firstData: any;
+  try {
+    const { data } = await axios.get(boardIssueUrl, { params: { ...baseParams, startAt: 0 }, headers });
+    firstData = data;
+  } catch {
+    return EMPTY_RESULT;
+  }
 
-  const total: number = firstPage.total ?? 0;
+  const total: number = firstData.total ?? 0;
   if (total === 0) return EMPTY_RESULT;
 
-  // Fetch all remaining pages in parallel
-  const allIssues: any[] = [...(firstPage.issues ?? [])];
-  if (total > allIssues.length) {
-    const pages = await Promise.all(
-      Array.from({ length: Math.ceil((total - allIssues.length) / 100) }, (_, i) =>
-        retryWithBackoff(() => axios.get(boardIssueUrl, {
-          params: { startAt: allIssues.length + i * 100, maxResults: 100, fields: "status,priority,issuetype", ...(dateJQL ? { jql: dateJQL } : {}) },
-          headers,
-        })).then(r => (r.data.issues ?? []) as any[]).catch((): any[] => [])
-      )
-    );
+  const allIssues: any[] = [...(firstData.issues ?? [])];
+
+  // Fetch remaining pages in parallel (if any)
+  if (total > 100) {
+    const pageRequests = [];
+    for (let startAt = 100; startAt < total; startAt += 100) {
+      pageRequests.push(
+        retryWithBackoff(() => axios.get(boardIssueUrl, { params: { ...baseParams, startAt }, headers }))
+          .then(r => r.data.issues ?? [])
+          .catch((): any[] => [])
+      );
+    }
+    const pages = await Promise.all(pageRequests);
     for (const page of pages) allIssues.push(...page);
   }
 
-  // Count everything in one pass
+  logger.info("getDashboardDataService: fetched all issues", { boardId, total: allIssues.length });
+
   let todo = 0, inProgress = 0, done = 0;
   const statusMap = new Map<string, { count: number; category: string }>();
   const typeMap = new Map<string, number>();
@@ -532,36 +543,44 @@ export const getDashboardDataService = async (url: string, auth: string, boardId
 
   for (const issue of allIssues) {
     const f = issue.fields ?? {};
-    const catKey: string = f.status?.statusCategory?.key ?? "new";
     const statusName: string = f.status?.name ?? "Unknown";
+    const catKey: string = f.status?.statusCategory?.key ?? "new";
+    const catName: string = f.status?.statusCategory?.name ?? "To Do";
     const typeName: string = f.issuetype?.name ?? "Unknown";
-    const priorityName: string = f.priority?.name ?? "Unknown";
+    const priorityName: string = f.priority?.name ?? "Medium";
 
-    if (catKey === "done") done++;
+    if (catKey === "new") todo++;
     else if (catKey === "indeterminate") inProgress++;
-    else todo++;
+    else if (catKey === "done") done++;
 
-    const sm = statusMap.get(statusName);
-    if (sm) sm.count++; else statusMap.set(statusName, { count: 1, category: f.status?.statusCategory?.name ?? "To Do" });
+    const s = statusMap.get(statusName);
+    if (s) s.count++; else statusMap.set(statusName, { count: 1, category: catName });
+
     typeMap.set(typeName, (typeMap.get(typeName) ?? 0) + 1);
     priorityMap.set(priorityName, (priorityMap.get(priorityName) ?? 0) + 1);
   }
 
-  const boardTotal = allIssues.length;
   const statusTableData = [...statusMap.entries()]
-    .map(([status, { count, category }]) => ({ status, category, count, pct: Math.round((count / boardTotal) * 100) }))
+    .map(([status, { count, category }]) => ({ status, category, count, pct: Math.round((count / total) * 100) }))
+    .filter((r) => r.count > 0)
     .sort((a, b) => b.count - a.count);
 
   const result: DashboardResult = {
-    total: boardTotal,
+    total,
     todo,
     inProgress,
     done,
-    openCount: boardTotal - done,
+    openCount: todo + inProgress,
     statusChart: statusTableData.slice(0, 12).map(({ status, count, category }) => ({ name: status, count, category })),
     statusTableData,
-    issueTypeData: [...typeMap.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
-    priorityData: [...priorityMap.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
+    issueTypeData: [...typeMap.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .filter((r) => r.count > 0)
+      .sort((a, b) => b.count - a.count),
+    priorityData: [...priorityMap.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .filter((r) => r.count > 0)
+      .sort((a, b) => b.count - a.count),
   };
 
   _dashboardCache.set(cacheKey, { data: result, expiresAt: Date.now() + CACHE_TTL });
