@@ -475,6 +475,232 @@ export const getEpicDetailsPageService = async (url: string, auth: string, epicK
     issues,
   };
 };
+// ─── Defect Analytics ────────────────────────────────────────────────────────
+
+type DefectPriority = { priority: string; count: number; openCount: number; avgDays: number };
+type DefectAssignee = { name: string; open: number; resolved: number };
+type DefectBug     = { key: string; summary: string; priority: string; ageDays: number; assignee: string };
+export type OpenIssue = { key: string; summary: string; priority: string; status: string; ageDays: number; assignee: string };
+
+export type DefectAnalyticsResult = {
+  totalBugs: number; openBugs: number; resolvedBugs: number;
+  critHighOpen: number; avgResolutionDays: number; escapeRate: number;
+  byPriority: DefectPriority[];
+  trend: { week: string; created: number; resolved: number }[];
+  aging: { label: string; count: number; color: string }[];
+  byAssignee: DefectAssignee[];
+  oldestBugs: DefectBug[];
+  openIssuesList: OpenIssue[];
+};
+
+const _defectCache = new Map<string, { data: DefectAnalyticsResult; expiresAt: number }>();
+
+export const getDefectAnalyticsService = async (
+  url: string, auth: string, boardId: string,
+): Promise<DefectAnalyticsResult> => {
+  const cacheKey = `${url}::${boardId}::${auth.slice(-16)}`;
+  const cached = _defectCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.data;
+
+  const headers = { Authorization: `Basic ${auth}`, Accept: "application/json" };
+  const searchUrl = `${url}/rest/api/3/search/jql`;
+  const boardIssueUrl = `${url}/rest/agile/1.0/board/${boardId}/issue`;
+  const escape = (s: string) => s.replace(/"/g, '\\"');
+
+  // ── Step 1: board config + issue types in parallel ────────────────────────
+  const [configRes, boardStatusesRes] = await Promise.allSettled([
+    axios.get(`${url}/rest/agile/1.0/board/${boardId}/configuration`, { headers }),
+    axios.get(`${url}/rest/agile/1.0/board/${boardId}/statuses`, { headers }),
+  ]);
+
+  const filterId: string | null =
+    configRes.status === "fulfilled" && configRes.value.data?.filter?.id
+      ? String(configRes.value.data.filter.id)
+      : null;
+
+  // Find issue types whose names suggest "bug/defect" semantics.
+  const BUG_KEYWORDS = ["bug", "defect", "fault", "error", "incident", "issue"];
+  let bugTypes: string[] = [];
+  if (boardStatusesRes.status === "fulfilled") {
+    const allTypes: string[] = (boardStatusesRes.value.data ?? [])
+      .map((t: any) => t.name as string)
+      .filter(Boolean);
+    bugTypes = allTypes.filter((name) =>
+      BUG_KEYWORDS.some((kw) => name.toLowerCase().includes(kw)),
+    );
+    if (bugTypes.length === 0) bugTypes = allTypes;
+  }
+  if (bugTypes.length === 0) bugTypes = ["Bug"];
+
+  logger.info("getDefectAnalyticsService: bug types detected", { boardId, bugTypes });
+
+  const bugTypeJql = bugTypes.map((t) => `"${escape(t)}"`).join(", ");
+  const bugFilter = `issuetype in (${bugTypeJql})`;
+
+  // ── Step 2: build scope and count helpers ─────────────────────────────────
+  const filterScope = filterId ? `filter = ${filterId} AND ${bugFilter}` : null;
+  const FIELDS = "key,summary,status,priority,assignee,created,resolutiondate";
+
+  const searchCount = (jql: string) =>
+    axios.get(searchUrl, { params: { jql, maxResults: 0 }, headers })
+      .then((r) => (r.data.total ?? 0) as number)
+      .catch(() => 0);
+
+  const boardCount = (jql: string) =>
+    axios.get(boardIssueUrl, { params: { jql, maxResults: 0 }, headers })
+      .then((r) => (r.data.total ?? 0) as number)
+      .catch(() => 0);
+
+  // ── Step 3: KPI counts — try filter JQL first, fall back to board API ─────
+  let totalBugs = 0, openBugs = 0, critHighOpen = 0, reopenedBugs = 0;
+  let usedFilterScope = false;
+
+  if (filterScope) {
+    [totalBugs, openBugs, critHighOpen, reopenedBugs] = await Promise.all([
+      searchCount(filterScope),
+      searchCount(`${filterScope} AND statusCategory != Done`),
+      searchCount(`${filterScope} AND priority in (Highest, High) AND statusCategory != Done`),
+      searchCount(`${filterScope} AND status = Reopened`),
+    ]);
+    usedFilterScope = totalBugs > 0;
+    logger.info("getDefectAnalyticsService: filter-scope counts", { boardId, totalBugs, usedFilterScope });
+  }
+
+  if (!usedFilterScope) {
+    [totalBugs, openBugs, critHighOpen, reopenedBugs] = await Promise.all([
+      boardCount(bugFilter),
+      boardCount(`${bugFilter} AND statusCategory != Done`),
+      boardCount(`${bugFilter} AND priority in (Highest, High) AND statusCategory != Done`),
+      boardCount(`${bugFilter} AND status = Reopened`),
+    ]);
+    logger.info("getDefectAnalyticsService: board-api counts", { boardId, totalBugs });
+  }
+
+  // ── Step 4: fetch up to 500 recent bugs for detailed analytics ────────────
+  const recentJql = `${usedFilterScope ? filterScope! : bugFilter} AND created >= -90d ORDER BY created DESC`;
+  let rawIssues: any[] = [];
+
+  try {
+    const { data } = usedFilterScope
+      ? await axios.get(searchUrl, { params: { jql: recentJql, maxResults: 500, fields: FIELDS }, headers })
+      : await axios.get(boardIssueUrl, { params: { jql: recentJql, maxResults: 500, fields: FIELDS }, headers });
+    rawIssues = data.issues ?? [];
+  } catch (err: any) {
+    logger.warn("getDefectAnalyticsService: recent-bug fetch failed", { boardId, error: err?.message });
+  }
+
+  type BugIssue = {
+    key: string; summary: string; priority: string; statusName: string; catKey: string;
+    assignee: { displayName: string } | null; created: string; resolutionDate: string | null;
+  };
+  const issues: BugIssue[] = rawIssues.map((i: any) => {
+    const f = i.fields ?? {};
+    return {
+      key: i.key,
+      summary: f.summary ?? "",
+      priority: f.priority?.name ?? "Medium",
+      statusName: f.status?.name ?? "Unknown",
+      catKey: f.status?.statusCategory?.key ?? "new",
+      assignee: f.assignee ? { displayName: f.assignee.displayName } : null,
+      created: f.created,
+      resolutionDate: f.resolutiondate ?? null,
+    };
+  });
+
+  // ── Step 5: aggregate from fetched issues ─────────────────────────────────
+  const resolvedWithDates = issues.filter((i) => i.catKey === "done" && i.created && i.resolutionDate);
+  const avgResolutionDays = resolvedWithDates.length > 0
+    ? Math.round(resolvedWithDates.reduce((s, i) =>
+        s + (new Date(i.resolutionDate!).getTime() - new Date(i.created).getTime()) / 86_400_000, 0)
+      / resolvedWithDates.length)
+    : 0;
+
+  const priMap = new Map<string, { count: number; open: number; days: number; res: number }>();
+  for (const i of issues) {
+    const e = priMap.get(i.priority) ?? { count: 0, open: 0, days: 0, res: 0 };
+    e.count++;
+    if (i.catKey !== "done") e.open++;
+    if (i.catKey === "done" && i.created && i.resolutionDate) {
+      e.days += (new Date(i.resolutionDate).getTime() - new Date(i.created).getTime()) / 86_400_000;
+      e.res++;
+    }
+    priMap.set(i.priority, e);
+  }
+  const PRI_ORDER = ["Highest", "High", "Medium", "Low", "Lowest"];
+  const byPriority: DefectPriority[] = [...priMap.entries()]
+    .map(([priority, e]) => ({
+      priority, count: e.count, openCount: e.open,
+      avgDays: e.res > 0 ? Math.round(e.days / e.res) : 0,
+    }))
+    .sort((a, b) => (PRI_ORDER.indexOf(a.priority) + 99) % 100 - (PRI_ORDER.indexOf(b.priority) + 99) % 100);
+
+  const now = Date.now();
+  const weekBuckets: { label: string; start: number; end: number; created: number; resolved: number }[] = [];
+  for (let w = 11; w >= 0; w--) {
+    const start = now - (w + 1) * 7 * 86_400_000;
+    const d = new Date(start);
+    weekBuckets.push({ label: `${d.getMonth() + 1}/${d.getDate()}`, start, end: now - w * 7 * 86_400_000, created: 0, resolved: 0 });
+  }
+  for (const i of issues) {
+    const ct = new Date(i.created).getTime();
+    for (const b of weekBuckets) if (ct >= b.start && ct < b.end) { b.created++; break; }
+    if (i.resolutionDate) {
+      const rt = new Date(i.resolutionDate).getTime();
+      for (const b of weekBuckets) if (rt >= b.start && rt < b.end) { b.resolved++; break; }
+    }
+  }
+  const trend = weekBuckets.map(({ label, created, resolved }) => ({ week: label, created, resolved }));
+
+  const aging = [
+    { label: "< 7 days",   count: 0, color: "#22c55e" },
+    { label: "7–30 days",  count: 0, color: "#eab308" },
+    { label: "30–90 days", count: 0, color: "#f97316" },
+    { label: "> 90 days",  count: 0, color: "#ef4444" },
+  ];
+  for (const i of issues.filter((x) => x.catKey !== "done")) {
+    const d = (now - new Date(i.created).getTime()) / 86_400_000;
+    if (d < 7) aging[0].count++;
+    else if (d < 30) aging[1].count++;
+    else if (d < 90) aging[2].count++;
+    else aging[3].count++;
+  }
+
+  const asgMap = new Map<string, { open: number; resolved: number }>();
+  for (const i of issues) {
+    const name = i.assignee?.displayName ?? "Unassigned";
+    const e = asgMap.get(name) ?? { open: 0, resolved: 0 };
+    if (i.catKey === "done") e.resolved++; else e.open++;
+    asgMap.set(name, e);
+  }
+  const byAssignee: DefectAssignee[] = [...asgMap.entries()]
+    .map(([name, e]) => ({ name, open: e.open, resolved: e.resolved }))
+    .sort((a, b) => b.open - a.open)
+    .slice(0, 8);
+
+  const openSorted = issues
+    .filter((i) => i.catKey !== "done")
+    .map((i) => ({
+      key: i.key, summary: i.summary, priority: i.priority,
+      status: i.statusName,
+      ageDays: Math.floor((now - new Date(i.created).getTime()) / 86_400_000),
+      assignee: i.assignee?.displayName ?? "Unassigned",
+    }))
+    .sort((a, b) => b.ageDays - a.ageDays);
+
+  const oldestBugs: DefectBug[] = openSorted.slice(0, 10);
+  const openIssuesList: OpenIssue[] = openSorted.slice(0, 100);
+
+  const result: DefectAnalyticsResult = {
+    totalBugs, openBugs,
+    resolvedBugs: totalBugs - openBugs,
+    critHighOpen, avgResolutionDays,
+    escapeRate: totalBugs > 0 ? Math.round((reopenedBugs / totalBugs) * 100) : 0,
+    byPriority, trend, aging, byAssignee, oldestBugs, openIssuesList,
+  };
+
+  _defectCache.set(cacheKey, { data: result, expiresAt: Date.now() + 5 * 60 * 1000 });
+  return result;
+};
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
 
@@ -518,7 +744,7 @@ export const getDashboardDataService = async (url: string, auth: string, boardId
         retryWithBackoff(() => axios.get(boardIssueUrl, {
           params: { startAt: allIssues.length + i * 100, maxResults: 100, fields: "status,priority,issuetype", ...(dateJQL ? { jql: dateJQL } : {}) },
           headers,
-        })).then(r => (r.data.issues ?? []) as any[]).catch((): any[] => [])
+        })).then((r: any) => (r.data.issues ?? []) as any[]).catch((): any[] => [])
       )
     );
     for (const page of pages) allIssues.push(...page);
@@ -826,4 +1052,72 @@ export const getSprintAnalysisService = async (
   logger.info("getSprintAnalysisService: success", { boardId, sprintCount: sprintResults.length });
 
   return result;
+};
+
+// ─── Single Issue Detail ──────────────────────────────────────────────────────
+
+function extractAdfText(node: any): string {
+  if (!node) return "";
+  if (node.type === "text") return node.text ?? "";
+  if (Array.isArray(node.content)) return node.content.map(extractAdfText).join("");
+  return "";
+}
+
+export const getIssueService = async (url: string, auth: string, issueKey: string) => {
+  const headers = { Authorization: `Basic ${auth}`, Accept: "application/json" };
+  const { data } = await axios.get(`${url}/rest/api/3/issue/${issueKey}`, {
+    params: {
+      expand: "changelog",
+      fields: "summary,description,status,priority,assignee,reporter,created,updated,resolutiondate,labels,components,comment,issuetype,customfield_10016,customfield_10026,customfield_10030",
+    },
+    headers,
+  });
+
+  const f = data.fields ?? {};
+
+  const statusHistory: { from: string; to: string; author: string; date: string }[] = [];
+  for (const history of (data.changelog?.histories ?? [])) {
+    for (const item of history.items) {
+      if (item.field === "status") {
+        statusHistory.push({
+          from: item.fromString ?? "",
+          to: item.toString ?? "",
+          author: history.author?.displayName ?? "Unknown",
+          date: history.created,
+        });
+      }
+    }
+  }
+
+  const comments = (f.comment?.comments ?? []).slice(-20).map((c: any) => ({
+    author: c.author?.displayName ?? "Unknown",
+    avatarUrl: c.author?.avatarUrls?.["24x24"] ?? "",
+    body: extractAdfText(c.body),
+    created: c.created,
+  }));
+
+  return {
+    key: data.key,
+    summary: f.summary ?? "",
+    description: extractAdfText(f.description),
+    status: f.status?.name ?? "Unknown",
+    statusCategoryKey: f.status?.statusCategory?.key ?? "new",
+    statusCategoryName: f.status?.statusCategory?.name ?? "To Do",
+    priority: f.priority?.name ?? "Medium",
+    issueType: f.issuetype?.name ?? "Bug",
+    assignee: f.assignee
+      ? { displayName: f.assignee.displayName, avatarUrl: f.assignee.avatarUrls?.["24x24"] ?? "" }
+      : null,
+    reporter: f.reporter
+      ? { displayName: f.reporter.displayName, avatarUrl: f.reporter.avatarUrls?.["24x24"] ?? "" }
+      : null,
+    created: f.created ?? null,
+    updated: f.updated ?? null,
+    resolutionDate: f.resolutiondate ?? null,
+    labels: (f.labels ?? []) as string[],
+    components: ((f.components ?? []) as any[]).map((c) => c.name as string),
+    storyPoints: f.customfield_10016 ?? f.customfield_10026 ?? f.customfield_10030 ?? null,
+    statusHistory,
+    comments,
+  };
 };

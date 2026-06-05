@@ -1,4 +1,5 @@
 import {
+  Bug,
   ChevronLeft,
   ChevronRight,
   GitCompare,
@@ -22,6 +23,7 @@ const navItems = [
   { to: "/sprints", label: "Sprint Analytics", icon: Zap },
   { to: "/compare", label: "Sprint Compare", icon: GitCompare },
   { to: "/epics", label: "Epic Intelligence", icon: Map },
+  { to: "/defects",  label: "Defect Analytics",  icon: Bug },
 ];
 
 export const Sidebar = () => {
